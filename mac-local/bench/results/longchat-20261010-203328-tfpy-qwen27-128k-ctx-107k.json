@@ -1,0 +1,64 @@
+{
+ "label": "tfpy-qwen27-128k-ctx-107k",
+ "model": "Qwen3.8-27B-DFlash2",
+ "port": 12348,
+ "pid": 2777,
+ "started": "2026-10-10T20:33:28.837034+02:00",
+ "note": "TensorFold 0.6.6, context 131072, budget 34 GiB, vision on; cold ~107K prompt",
+ "host": {
+  "machine": "arm64",
+  "system": "Darwin",
+  "release": "25.6.0",
+  "machdep.cpu.brand_string": "Apple M3 Max",
+  "hw.memsize": "51539607552"
+ },
+ "settings": {
+  "port": 12348,
+  "model": "Qwen3.8-27B-DFlash2",
+  "label": "tfpy-qwen27-128k-ctx-107k",
+  "history_tokens": 80000,
+  "turns": 0,
+  "max_tokens": 300,
+  "temperature": 1.0,
+  "ignore_eos": false,
+  "timeout": 3600,
+  "note": "TensorFold 0.6.6, context 131072, budget 34 GiB, vision on; cold ~107K prompt"
+ },
+ "turns": [
+  {
+   "turn": 0,
+   "prompt_tokens": 105306,
+   "cached_tokens": 20121,
+   "new_prompt_tokens": 85185,
+   "ttft_s": 1156.642,
+   "prefill_tok_s": 73.6,
+   "completion_tokens": 300,
+   "decode_s": 22.15,
+   "decode_tok_s": 13.5,
+   "wall_s": 1178.79,
+   "finish": "length",
+   "reasoning_chars": 933,
+   "content_chars": 0,
+   "server_timings": null,
+   "server_tensorfold": {
+    "prefill_seconds": 1156.4089745408855,
+    "time_to_first_token": 1156.6259939996526,
+    "seconds": 1178.541434165556,
+    "tokens_per_second": 13.50956943198093,
+    "drafts": true,
+    "sampling": "exact"
+   },
+   "footprint_gib": 26.45,
+   "lifetime_peak_gib": 32.02
+  }
+ ],
+ "memory": {
+  "footprint_start_gib": 19.658,
+  "footprint_peak_sampled_gib": 31.848,
+  "footprint_lifetime_peak_gib": 32.023,
+  "engine_reported_peak_gib": null,
+  "samples": 2341
+ },
+ "swap_before_mib": 1445.69,
+ "swap_after_mib": 1445.69
+}

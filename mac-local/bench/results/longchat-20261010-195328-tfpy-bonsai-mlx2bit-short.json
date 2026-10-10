@@ -1,0 +1,142 @@
+{
+ "label": "tfpy-bonsai-mlx2bit-short",
+ "model": "Bonsai-2-27B-MLX-DFlash2",
+ "port": 12348,
+ "pid": 87492,
+ "started": "2026-10-10T19:53:28.539166+02:00",
+ "note": "TensorFold 0.6.6 MLX, Ternary Bonsai 2 27B mlx-2bit widened to 4-bit + DFlash2 q4, budget 28 GiB",
+ "host": {
+  "machine": "arm64",
+  "system": "Darwin",
+  "release": "25.6.0",
+  "machdep.cpu.brand_string": "Apple M3 Max",
+  "hw.memsize": "51539607552"
+ },
+ "settings": {
+  "port": 12348,
+  "model": "Bonsai-2-27B-MLX-DFlash2",
+  "label": "tfpy-bonsai-mlx2bit-short",
+  "history_tokens": 1500,
+  "turns": 3,
+  "max_tokens": 400,
+  "temperature": 1.0,
+  "ignore_eos": false,
+  "timeout": 3600,
+  "note": "TensorFold 0.6.6 MLX, Ternary Bonsai 2 27B mlx-2bit widened to 4-bit + DFlash2 q4, budget 28 GiB"
+ },
+ "turns": [
+  {
+   "turn": 0,
+   "prompt_tokens": 2417,
+   "cached_tokens": 0,
+   "new_prompt_tokens": 2417,
+   "ttft_s": 13.591,
+   "prefill_tok_s": 177.8,
+   "completion_tokens": 400,
+   "decode_s": 11.014,
+   "decode_tok_s": 36.23,
+   "wall_s": 24.61,
+   "finish": "length",
+   "reasoning_chars": 1226,
+   "content_chars": 0,
+   "server_timings": null,
+   "server_tensorfold": {
+    "prefill_seconds": 13.575476208236068,
+    "time_to_first_token": 13.581996208056808,
+    "seconds": 24.564153207931668,
+    "tokens_per_second": 36.31010357398373,
+    "drafts": true,
+    "sampling": "exact"
+   },
+   "footprint_gib": 17.46,
+   "lifetime_peak_gib": 22.98
+  },
+  {
+   "turn": 1,
+   "prompt_tokens": 2490,
+   "cached_tokens": 2331,
+   "new_prompt_tokens": 159,
+   "ttft_s": 1.012,
+   "prefill_tok_s": 157.2,
+   "completion_tokens": 316,
+   "decode_s": 10.418,
+   "decode_tok_s": 30.24,
+   "wall_s": 11.43,
+   "finish": "stop",
+   "reasoning_chars": 504,
+   "content_chars": 409,
+   "server_timings": null,
+   "server_tensorfold": {
+    "prefill_seconds": 1.0045471251942217,
+    "time_to_first_token": 1.0108756669797003,
+    "seconds": 11.401692249812186,
+    "tokens_per_second": 30.29677822368325,
+    "drafts": true,
+    "sampling": "exact"
+   },
+   "footprint_gib": 18.05,
+   "lifetime_peak_gib": 22.98
+  },
+  {
+   "turn": 2,
+   "prompt_tokens": 2678,
+   "cached_tokens": 2331,
+   "new_prompt_tokens": 347,
+   "ttft_s": 2.247,
+   "prefill_tok_s": 154.4,
+   "completion_tokens": 400,
+   "decode_s": 12.285,
+   "decode_tok_s": 32.48,
+   "wall_s": 14.53,
+   "finish": "length",
+   "reasoning_chars": 672,
+   "content_chars": 408,
+   "server_timings": null,
+   "server_tensorfold": {
+    "prefill_seconds": 2.239530083257705,
+    "time_to_first_token": 2.246429624967277,
+    "seconds": 14.496178207919002,
+    "tokens_per_second": 32.55376151308301,
+    "drafts": true,
+    "sampling": "exact"
+   },
+   "footprint_gib": 18.24,
+   "lifetime_peak_gib": 22.98
+  },
+  {
+   "turn": 3,
+   "prompt_tokens": 2880,
+   "cached_tokens": 2673,
+   "new_prompt_tokens": 207,
+   "ttft_s": 1.338,
+   "prefill_tok_s": 154.8,
+   "completion_tokens": 400,
+   "decode_s": 13.699,
+   "decode_tok_s": 29.13,
+   "wall_s": 15.04,
+   "finish": "length",
+   "reasoning_chars": 1505,
+   "content_chars": 0,
+   "server_timings": null,
+   "server_tensorfold": {
+    "prefill_seconds": 1.3288911250419915,
+    "time_to_first_token": 1.3367934157140553,
+    "seconds": 15.006590916775167,
+    "tokens_per_second": 29.171571687891284,
+    "drafts": true,
+    "sampling": "exact"
+   },
+   "footprint_gib": 17.79,
+   "lifetime_peak_gib": 22.98
+  }
+ ],
+ "memory": {
+  "footprint_start_gib": 15.328,
+  "footprint_peak_sampled_gib": 20.272,
+  "footprint_lifetime_peak_gib": 22.977,
+  "engine_reported_peak_gib": null,
+  "samples": 131
+ },
+ "swap_before_mib": 1477.69,
+ "swap_after_mib": 1477.69
+}
