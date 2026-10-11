@@ -1,0 +1,76 @@
+{
+ "label": "omlx-dflash-20k-after-restart",
+ "model": "Qwen3.8-27B-4bit",
+ "port": 8080,
+ "pid": 10213,
+ "started": "2026-10-11T01:40:16.089929+02:00",
+ "note": "oMLX fresh process after restart: same 20K history; tests paged SSD cache resume",
+ "host": {
+  "machine": "arm64",
+  "system": "Darwin",
+  "release": "25.6.0",
+  "machdep.cpu.brand_string": "Apple M3 Max",
+  "hw.memsize": "51539607552"
+ },
+ "settings": {
+  "port": 8080,
+  "model": "Qwen3.8-27B-4bit",
+  "label": "omlx-dflash-20k-after-restart",
+  "history_tokens": 15000,
+  "turns": 1,
+  "max_tokens": 400,
+  "temperature": 1.0,
+  "ignore_eos": false,
+  "timeout": 3600,
+  "note": "oMLX fresh process after restart: same 20K history; tests paged SSD cache resume"
+ },
+ "turns": [
+  {
+   "turn": 0,
+   "prompt_tokens": 20207,
+   "cached_tokens": 0,
+   "new_prompt_tokens": 20207,
+   "ttft_s": 134.701,
+   "prefill_tok_s": 150.0,
+   "completion_tokens": 400,
+   "decode_s": 22.2,
+   "decode_tok_s": 17.97,
+   "wall_s": 156.9,
+   "finish": "stop",
+   "reasoning_chars": 1519,
+   "content_chars": 1519,
+   "server_timings": null,
+   "server_tensorfold": null,
+   "footprint_gib": 20.09,
+   "lifetime_peak_gib": 24.39
+  },
+  {
+   "turn": 1,
+   "prompt_tokens": 20677,
+   "cached_tokens": 20202,
+   "new_prompt_tokens": 475,
+   "ttft_s": 3.874,
+   "prefill_tok_s": 122.6,
+   "completion_tokens": 400,
+   "decode_s": 15.289,
+   "decode_tok_s": 26.1,
+   "wall_s": 19.16,
+   "finish": "stop",
+   "reasoning_chars": 1191,
+   "content_chars": 1191,
+   "server_timings": null,
+   "server_tensorfold": null,
+   "footprint_gib": 19.95,
+   "lifetime_peak_gib": 24.39
+  }
+ ],
+ "memory": {
+  "footprint_start_gib": 0.112,
+  "footprint_peak_sampled_gib": 24.306,
+  "footprint_lifetime_peak_gib": 24.39,
+  "engine_reported_peak_gib": null,
+  "samples": 350
+ },
+ "swap_before_mib": 2794.75,
+ "swap_after_mib": 2778.75
+}

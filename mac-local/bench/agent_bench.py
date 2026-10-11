@@ -291,7 +291,7 @@ class Sampler(threading.Thread):
 
 def post_stream(port, body, timeout):
     request = Request(f'http://127.0.0.1:{port}/v1/chat/completions', data=json.dumps(body).encode(),
-                      headers={'Content-Type': 'application/json', 'Authorization': 'Bearer local'})
+                      headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + os.environ.get('BENCH_API_KEY', 'local')})
     started = time.time()
     first = None
     content, reasoning, calls, usage, extra, finish = [], [], {}, None, {}, None

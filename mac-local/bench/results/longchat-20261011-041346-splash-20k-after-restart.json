@@ -1,0 +1,92 @@
+{
+ "label": "splash-20k-after-restart",
+ "model": "Qwen3.8-27B-Splash",
+ "port": 12350,
+ "pid": 61859,
+ "started": "2026-10-11T04:13:46.760090+02:00",
+ "note": "Splash after restart, persistent SSD cache: same 20K history",
+ "host": {
+  "machine": "arm64",
+  "system": "Darwin",
+  "release": "25.6.0",
+  "machdep.cpu.brand_string": "Apple M3 Max",
+  "hw.memsize": "51539607552"
+ },
+ "settings": {
+  "port": 12350,
+  "model": "Qwen3.8-27B-Splash",
+  "label": "splash-20k-after-restart",
+  "history_tokens": 15000,
+  "turns": 1,
+  "max_tokens": 400,
+  "temperature": 1.0,
+  "ignore_eos": false,
+  "timeout": 3600,
+  "note": "Splash after restart, persistent SSD cache: same 20K history"
+ },
+ "turns": [
+  {
+   "turn": 0,
+   "prompt_tokens": 20207,
+   "cached_tokens": 20192,
+   "new_prompt_tokens": 15,
+   "ttft_s": 0.671,
+   "prefill_tok_s": 22.4,
+   "completion_tokens": 400,
+   "decode_s": 7.799,
+   "decode_tok_s": 51.16,
+   "wall_s": 8.47,
+   "finish": "length",
+   "reasoning_chars": 1115,
+   "content_chars": 0,
+   "server_timings": {
+    "prompt_n": 20207,
+    "prompt_ms": 222.055,
+    "prompt_per_second": 67.5508320010808,
+    "predicted_n": 400,
+    "predicted_ms": 7799.009,
+    "predicted_per_second": 50.77568188471125,
+    "cache_n": 20192
+   },
+   "server_tensorfold": null,
+   "footprint_gib": 0.69,
+   "lifetime_peak_gib": 0.69
+  },
+  {
+   "turn": 1,
+   "prompt_tokens": 20280,
+   "cached_tokens": 20256,
+   "new_prompt_tokens": 24,
+   "ttft_s": 0.378,
+   "prefill_tok_s": 63.6,
+   "completion_tokens": 400,
+   "decode_s": 6.726,
+   "decode_tok_s": 59.33,
+   "wall_s": 7.1,
+   "finish": "length",
+   "reasoning_chars": 1437,
+   "content_chars": 0,
+   "server_timings": {
+    "prompt_n": 20280,
+    "prompt_ms": 289.925,
+    "prompt_per_second": 82.78002931792705,
+    "predicted_n": 400,
+    "predicted_ms": 6725.193,
+    "predicted_per_second": 59.03176310330424,
+    "cache_n": 20256
+   },
+   "server_tensorfold": null,
+   "footprint_gib": 0.69,
+   "lifetime_peak_gib": 0.69
+  }
+ ],
+ "memory": {
+  "footprint_start_gib": 0.688,
+  "footprint_peak_sampled_gib": 0.695,
+  "footprint_lifetime_peak_gib": 0.695,
+  "engine_reported_peak_gib": null,
+  "samples": 31
+ },
+ "swap_before_mib": 2474.0,
+ "swap_after_mib": 2474.0
+}

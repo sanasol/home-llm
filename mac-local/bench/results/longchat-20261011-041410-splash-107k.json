@@ -1,0 +1,119 @@
+{
+ "label": "splash-107k",
+ "model": "Qwen3.8-27B-Splash",
+ "port": 12350,
+ "pid": 61859,
+ "started": "2026-10-11T04:14:10.270058+02:00",
+ "note": "Splash 1.3.1, cold ~105K prompt + 2 continuation turns",
+ "host": {
+  "machine": "arm64",
+  "system": "Darwin",
+  "release": "25.6.0",
+  "machdep.cpu.brand_string": "Apple M3 Max",
+  "hw.memsize": "51539607552"
+ },
+ "settings": {
+  "port": 12350,
+  "model": "Qwen3.8-27B-Splash",
+  "label": "splash-107k",
+  "history_tokens": 80000,
+  "turns": 2,
+  "max_tokens": 400,
+  "temperature": 1.0,
+  "ignore_eos": false,
+  "timeout": 3600,
+  "note": "Splash 1.3.1, cold ~105K prompt + 2 continuation turns"
+ },
+ "turns": [
+  {
+   "turn": 0,
+   "prompt_tokens": 105306,
+   "cached_tokens": 0,
+   "new_prompt_tokens": 105306,
+   "ttft_s": 724.392,
+   "prefill_tok_s": 145.4,
+   "completion_tokens": 400,
+   "decode_s": 12.604,
+   "decode_tok_s": 31.66,
+   "wall_s": 737.0,
+   "finish": "length",
+   "reasoning_chars": 1333,
+   "content_chars": 0,
+   "server_timings": {
+    "prompt_n": 105306,
+    "prompt_ms": 724283.383,
+    "prompt_per_second": 145.39336739139299,
+    "predicted_n": 400,
+    "predicted_ms": 12603.406,
+    "predicted_per_second": 31.499421664270752,
+    "cache_n": 0
+   },
+   "server_tensorfold": null,
+   "footprint_gib": 0.31,
+   "lifetime_peak_gib": 0.69
+  },
+  {
+   "turn": 1,
+   "prompt_tokens": 105379,
+   "cached_tokens": 105280,
+   "new_prompt_tokens": 99,
+   "ttft_s": 1.677,
+   "prefill_tok_s": 59.0,
+   "completion_tokens": 400,
+   "decode_s": 13.678,
+   "decode_tok_s": 29.17,
+   "wall_s": 15.36,
+   "finish": "length",
+   "reasoning_chars": 1369,
+   "content_chars": 0,
+   "server_timings": {
+    "prompt_n": 105379,
+    "prompt_ms": 1667.423,
+    "prompt_per_second": 59.37305650695714,
+    "predicted_n": 400,
+    "predicted_ms": 13677.485,
+    "predicted_per_second": 29.02580408605822,
+    "cache_n": 105280
+   },
+   "server_tensorfold": null,
+   "footprint_gib": 0.31,
+   "lifetime_peak_gib": 0.69
+  },
+  {
+   "turn": 2,
+   "prompt_tokens": 105434,
+   "cached_tokens": 105344,
+   "new_prompt_tokens": 90,
+   "ttft_s": 1.38,
+   "prefill_tok_s": 65.2,
+   "completion_tokens": 400,
+   "decode_s": 12.477,
+   "decode_tok_s": 31.98,
+   "wall_s": 13.86,
+   "finish": "length",
+   "reasoning_chars": 1377,
+   "content_chars": 0,
+   "server_timings": {
+    "prompt_n": 105434,
+    "prompt_ms": 1371.292,
+    "prompt_per_second": 65.63153580710747,
+    "predicted_n": 400,
+    "predicted_ms": 12476.511,
+    "predicted_per_second": 31.579341371958876,
+    "cache_n": 105344
+   },
+   "server_tensorfold": null,
+   "footprint_gib": 0.31,
+   "lifetime_peak_gib": 0.69
+  }
+ ],
+ "memory": {
+  "footprint_start_gib": 0.695,
+  "footprint_peak_sampled_gib": 0.695,
+  "footprint_lifetime_peak_gib": 0.695,
+  "engine_reported_peak_gib": null,
+  "samples": 1511
+ },
+ "swap_before_mib": 2474.0,
+ "swap_after_mib": 2386.0
+}
