@@ -1,0 +1,13 @@
+[Unit]
+Description=Rig monitor (Strata main + vLLM side + hardware, :8090)
+After=network-online.target llm-main.service llm-side.service
+
+[Service]
+User=al
+ExecStart=/usr/bin/python3 /opt/rig/monitor/monitor.py
+Restart=always
+RestartSec=3
+Environment=PORT=8090
+
+[Install]
+WantedBy=multi-user.target

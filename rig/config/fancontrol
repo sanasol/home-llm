@@ -1,0 +1,10 @@
+INTERVAL=5
+DEVPATH=hwmon2=devices/platform/nct6775.656
+DEVNAME=hwmon2=nct6799
+FCFANS=hwmon2/pwm2=hwmon2/fan2_input hwmon2/pwm3=hwmon2/fan3_input
+FCTEMPS=hwmon2/pwm2=hwmon2/temp1_input hwmon2/pwm3=hwmon2/temp1_input
+MINTEMP=hwmon2/pwm2=40 hwmon2/pwm3=40
+MAXTEMP=hwmon2/pwm2=70 hwmon2/pwm3=70
+MINSTART=hwmon2/pwm2=170 hwmon2/pwm3=160
+MINSTOP=hwmon2/pwm2=150 hwmon2/pwm3=140
+MINPWM=hwmon2/pwm2=150 hwmon2/pwm3=140

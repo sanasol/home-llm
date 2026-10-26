@@ -1,0 +1,70 @@
+{
+  "auto_source": false,
+  "boot": {
+    "backend": "grub",
+    "initramfs": "initramfs-tools"
+  },
+  "devices": [
+    {
+      "architecture": "ampere",
+      "archive": "~/loader/gpu-profile9/archives/0000-02-00-0.rom",
+      "bdf": "0000:02:00.0",
+      "device": 8708,
+      "evidence": {
+        "application": "unverified",
+        "boot": "unverified",
+        "fields": {}
+      },
+      "payload": "~/loader/gpu-profile9/payloads/0000-02-00-0.bin",
+      "sha256": "b5fea5f4cd3dc3796bc7599cbf7466bac739bdac0402c356077b2af4076a6234",
+      "size": 466432,
+      "source_sha256": "b5fea5f4cd3dc3796bc7599cbf7466bac739bdac0402c356077b2af4076a6234",
+      "source_size": 466432,
+      "uuid": "GPU-2e674bbf-af1e-4ad3-17f6-abc8e47b4f36",
+      "vendor": 4318
+    },
+    {
+      "architecture": "ampere",
+      "archive": "~/loader/gpu-profile9/archives/0000-03-00-0.rom",
+      "bdf": "0000:03:00.0",
+      "device": 8708,
+      "evidence": {
+        "application": "unverified",
+        "boot": "unverified",
+        "fields": {}
+      },
+      "payload": "~/loader/gpu-profile9/payloads/0000-03-00-0.bin",
+      "sha256": "b5fea5f4cd3dc3796bc7599cbf7466bac739bdac0402c356077b2af4076a6234",
+      "size": 466432,
+      "source_sha256": "b5fea5f4cd3dc3796bc7599cbf7466bac739bdac0402c356077b2af4076a6234",
+      "source_size": 466432,
+      "uuid": "GPU-9c7268f4-61e4-a63f-7a6f-e33d57743219",
+      "vendor": 4318
+    }
+  ],
+  "discovery": [
+    {
+      "bdf": "0000:02:00.0",
+      "index": 1,
+      "name": "NVIDIA GeForce RTX 3090",
+      "uuid": "GPU-2e674bbf-af1e-4ad3-17f6-abc8e47b4f36"
+    },
+    {
+      "bdf": "0000:03:00.0",
+      "index": 2,
+      "name": "NVIDIA GeForce RTX 3090",
+      "uuid": "GPU-9c7268f4-61e4-a63f-7a6f-e33d57743219"
+    }
+  ],
+  "driver_sources": [
+    {
+      "p2p_preferred": false,
+      "path": "~/ogkm-hybrid"
+    }
+  ],
+  "fallback_entry": "gnulinux-simple-37003bdc-fc7c-4bef-b48a-eec1237db74f",
+  "jobs": 1,
+  "userspace": {
+    "provider": "deb"
+  }
+}

@@ -1,0 +1,26 @@
+[
+ {
+  "depth": 0.1,
+  "prompt_tokens": 162195,
+  "expected": "D8878-U58",
+  "answer": "D8878-U58",
+  "pass": true,
+  "seconds": 30.7
+ },
+ {
+  "depth": 0.5,
+  "prompt_tokens": 162195,
+  "expected": "D6833-M48",
+  "answer": "D6833-M48",
+  "pass": true,
+  "seconds": 31.2
+ },
+ {
+  "depth": 0.9,
+  "prompt_tokens": 162195,
+  "expected": "G3660-W94",
+  "answer": "G3660-W94",
+  "pass": true,
+  "seconds": 31.2
+ }
+]

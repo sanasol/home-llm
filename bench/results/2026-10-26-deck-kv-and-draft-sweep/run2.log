@@ -1,0 +1,22 @@
+=== fp8-k7b: --kv-dtype fp8 --spec dflash2 --draft-tokens 7 --max-context 212992
+2026-10-26 01:44:26.468  INFO  capacity | KV 215,488 tokens, fp8, auto | pages 3,367/6,656 | runtime 8.26 GiB | free 1015.1 MiB
+short code: decode median 256.7 tok/s, ttft 0.03 s
+short prose: decode median 162.7 tok/s, ttft 0.156 s
+short list: decode median 201.1 tok/s, ttft 0.156 s
+short tool_call: decode median 324.6 tok/s, ttft None s
+long 8788 tok: prefill 0.875 s (10043 tok/s), decode 204.3 tok/s
+long 34759 tok: prefill 3.71 s (9369 tok/s), decode 168.8 tok/s
+long 107596 tok: prefill 16.533 s (6508 tok/s), decode 166.1 tok/s
+=== k8v4-k7-240k
+2026-10-26 01:51:06.098  INFO  capacity | KV 276,672 tokens, k8v4, auto | pages 4,323/7,500 | runtime 8.26 GiB | free 1013.1 MiB
+short code: decode median 274.3 tok/s, ttft 0.03 s
+short prose: decode median 181.4 tok/s, ttft 0.157 s
+short list: decode median 175.4 tok/s, ttft 0.156 s
+short tool_call: decode median 327.7 tok/s, ttft None s
+long 8787 tok: prefill 0.874 s (10054 tok/s), decode 202.1 tok/s
+long 34761 tok: prefill 3.707 s (9377 tok/s), decode 182.3 tok/s
+long 107599 tok: prefill 16.506 s (6519 tok/s), decode 171.7 tok/s
+needle depth 0.1: PASS (162195 tok, 30.7 s) expected D8878-U58 got 'D8878-U58'
+needle depth 0.5: PASS (162195 tok, 31.2 s) expected D6833-M48 got 'D6833-M48'
+needle depth 0.9: PASS (162195 tok, 31.2 s) expected G3660-W94 got 'G3660-W94'
+=== done; ninfer.service started

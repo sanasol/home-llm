@@ -1,0 +1,3 @@
+#!/bin/sh
+# Legacy Python curses monitor (fallback for the Ratatui version in deck/tui).
+exec python3 "$HOME/ninfer-monitor/tui.py" "$@"

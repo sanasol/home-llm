@@ -1,0 +1,26 @@
+[
+ {
+  "depth": 0.1,
+  "prompt_tokens": 131210,
+  "expected": "J3999-N34",
+  "answer": "J3999-N34",
+  "pass": true,
+  "seconds": 22.1
+ },
+ {
+  "depth": 0.5,
+  "prompt_tokens": 131210,
+  "expected": "E9532-V21",
+  "answer": "E9532-V21",
+  "pass": true,
+  "seconds": 22.6
+ },
+ {
+  "depth": 0.9,
+  "prompt_tokens": 131210,
+  "expected": "D4840-M56",
+  "answer": "D4840-M56",
+  "pass": true,
+  "seconds": 22.7
+ }
+]

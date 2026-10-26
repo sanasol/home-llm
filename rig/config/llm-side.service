@@ -1,0 +1,16 @@
+[Unit]
+Description=vLLM side: Qwen3.8-27B GPTQ on all RTX 3090 (:8002)
+After=network-online.target tailscaled.service rig-gpu-power.service llm-main.service
+Wants=network-online.target
+
+[Service]
+User=al
+Environment=HOME=~
+EnvironmentFile=/opt/rig/llm-side.env
+ExecStart=/opt/rig/llm-side.sh
+Restart=on-failure
+RestartSec=30
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

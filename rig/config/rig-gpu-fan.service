@@ -1,0 +1,10 @@
+[Unit]
+Description=rig: fan curve for RTX 3090 blower
+After=nvidia-persistenced.service rig-gpu-power.service
+[Service]
+ExecStart=/opt/rig/gpu-fan.py
+ExecStopPost=/opt/rig/gpu-fan.py --reset
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

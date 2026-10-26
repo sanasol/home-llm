@@ -1,0 +1,113 @@
+#cloud-config
+# Ubuntu Server 26.10: установка rig без монитора, клавиатуры и кабеля — по Wi-Fi.
+# Шаблон: build-iso.sh подставляет @SSH_KEYS@, @WIFI@, @WIFI_COUNTRY@ и кладёт файл в корень ISO как /autoinstall.yaml.
+# ⚠️ Стирает диск Samsung 990 PRO без вопросов. Другие диски не трогает: если 990 PRO нет, установка упадёт.
+#
+# Почему 26.10, а не 24.04/26.04 LTS: Wi-Fi 7 на X870E Taichi Lite — MediaTek MT7927, его драйвер есть
+# только в ядре 7.2+ (в 26.10 — 7.3). И в серверном установщике нет wpasupplicant: его ставим с флешки
+# в early-commands, до того как установщик поднимает сеть.
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard: {layout: us}
+
+  early-commands:
+    - dpkg -i /cdrom/rig/debs/*.deb
+    - iw reg set @WIFI_COUNTRY@ || true
+    # networkd не умеет Wi-Fi через match:, нужно точное имя (зависит от слота PCIe, напр. wlp9s0).
+    # Ждём интерфейс до 60 с и подставляем имя вместо rigwifi0; установщик перечитывает /autoinstall.yaml
+    # после early-commands. Сетевой конфиг вместе с этим именем переносится и в установленную систему.
+    - >-
+      sh -c 'for i in $(seq 60); do w=$(ls /sys/class/net | grep -m1 "^wl"); [ -n "$w" ] && break; sleep 1; done;
+      echo "rig: wifi interface: ${w:-none}"; [ -n "$w" ] && sed -i "s/rigwifi0/$w/" /autoinstall.yaml; true'
+
+  network:
+    version: 2
+    ethernets:
+      lan:
+        match: {name: "en*"}
+        dhcp4: true
+        dhcp6: true
+        optional: true
+    wifis:
+      rigwifi0:                   # заменяется на реальное имя в early-commands
+        dhcp4: true
+        dhcp6: true
+        regulatory-domain: "@WIFI_COUNTRY@"
+        access-points:
+@WIFI@
+
+  storage:
+    layout:
+      name: lvm
+      sizing-policy: all          # по умолчанию Ubuntu отдаёт корню только 100 ГБ
+      # udev отдаёт модель то с пробелами, то с подчёркиваниями (Samsung_SSD_990_PRO_2TB_<серийник>),
+      # поэтому шаблон по serial со звёздочками вместо разделителей.
+      match:
+        serial: "Samsung*990*PRO*"
+
+  ssh:
+    install-server: true
+    allow-pw: false
+
+  updates: all
+  packages:
+    - wpasupplicant
+    - iw
+    - avahi-daemon                # rig.local в локальной сети
+    - build-essential
+    - git
+    - curl
+    - jq
+    - tmux
+    - htop
+    - btop
+    - nvtop
+    - python3-venv
+    - python3-pip
+    - pciutils
+    - lm-sensors
+    - nvme-cli
+    - smartmontools
+
+  late-commands:
+    # На случай если apt не поставил wpasupplicant: без него после перезагрузки rig не выйдет в сеть.
+    - mkdir -p /target/var/cache/rig-debs && cp /cdrom/rig/debs/*.deb /target/var/cache/rig-debs/
+    - curtin in-target -- sh -c 'dpkg -s wpasupplicant >/dev/null 2>&1 || dpkg -i /var/cache/rig-debs/*.deb'
+    # Драйвер из архива Ubuntu: подписанные готовые модули, без DKMS, не мешает Secure Boot.
+    # Ошибка не валит установку; лог в /var/log/rig-nvidia-install.log, повтор: rig-postinstall.sh.
+    - >-
+      curtin in-target -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y
+      nvidia-driver-580-open linux-modules-nvidia-580-open-generic
+      >/var/log/rig-nvidia-install.log 2>&1 || echo FAILED >>/var/log/rig-nvidia-install.log'
+    # Аппаратный watchdog: если система зависнет, плата перезагрузит её сама.
+    - mkdir -p /target/etc/systemd/system.conf.d
+    - printf '[Manager]\nRuntimeWatchdogSec=30s\nRebootWatchdogSec=2min\n' > /target/etc/systemd/system.conf.d/watchdog.conf
+    # Wi-Fi: регуляторный домен для 5 ГГц и без энергосбережения (иначе бывают обрывы SSH).
+    - echo 'options cfg80211 ieee80211_regdom=@WIFI_COUNTRY@' > /target/etc/modprobe.d/rig-wifi.conf
+    - >-
+      echo 'ACTION=="add", SUBSYSTEM=="net", KERNEL=="wl*", RUN+="/usr/sbin/iw dev $name set power_save off"'
+      > /target/etc/udev/rules.d/70-rig-wifi-powersave.rules
+    - echo 'CUDA_DEVICE_ORDER=PCI_BUS_ID' >> /target/etc/environment
+    # timezone ни в autoinstall, ни в user-data в тестах не применился — ставим напрямую.
+    - curtin in-target -- sh -c 'ln -sf /usr/share/zoneinfo/Europe/Belgrade /etc/localtime && echo Europe/Belgrade > /etc/timezone'
+    - mkdir -p /target/opt/rig /target/models
+    - cp /cdrom/rig/rig-postinstall.sh /target/opt/rig/
+    - date -Is > /target/opt/rig/installed-at
+
+  # Выключиться, а не перезагрузиться: иначе с флешки снова запустится установка.
+  shutdown: poweroff
+
+  user-data:
+    hostname: rig
+    preserve_hostname: false
+    users:
+      - name: al
+        groups: [adm, sudo, video, render, systemd-journal]
+        shell: /bin/bash
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        lock_passwd: true         # вход только по ключу; пароль при желании: sudo passwd al
+        ssh_authorized_keys:
+@SSH_KEYS@
+    runcmd:
+      - chown al:al /models

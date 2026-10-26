@@ -1,0 +1,9 @@
+[Unit]
+Description=rig: GPU power limits
+After=nvidia-persistenced.service
+[Service]
+Type=oneshot
+ExecStart=/opt/rig/gpu-power.sh
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

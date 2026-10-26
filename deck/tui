@@ -1,0 +1,4 @@
+#!/bin/sh
+# NInfer monitor TUI (Ratatui edition). Manual launch only.
+# Install: sudo cp deck/tui /usr/local/bin/tui
+exec "$HOME/ninfer-monitor/ninfer-tui" "$@"

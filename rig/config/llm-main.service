@@ -1,0 +1,17 @@
+[Unit]
+Description=Strata main: Qwen3.8-Flash-Next IQ3_S on RTX 5090 (:8001)
+After=network-online.target tailscaled.service rig-gpu-power.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=al
+Environment=HOME=~
+Environment=CUDA_DEVICE_ORDER=PCI_BUS_ID
+ExecStart=~/.local/bin/strata launch --preset main --yes --no-tui
+ExecStop=~/.local/bin/strata launch --stop --preset main
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

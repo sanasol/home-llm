@@ -1,0 +1,10 @@
+{
+  "id": "launch-main",
+  "overrides": {
+    "host": "0.0.0.0",
+    "parallel": 2,
+    "port": 8001
+  },
+  "schema_version": 1,
+  "source_config": "~/.local/state/strata/launch/main.json"
+}

@@ -1,0 +1,10 @@
+#cloud-config
+# Спасательная флешка для rig: ничего не ставит и диск не форматирует.
+# В early-commands запускает /cdrom/rig/rescue.sh (сеть по USB4, пароль, диагностика) и выключает ПК.
+# В GRUB нет параметра autoinstall: если выключение не сработает, установщик остановится на
+# подтверждении и без человека ничего не сотрёт. Хеш пароля подставляет build-rescue-iso.sh.
+autoinstall:
+  version: 1
+  early-commands:
+    - RIG_PASS_HASH='@PASS_HASH@' sh /cdrom/rig/rescue.sh
+    - sync; systemctl poweroff -i || poweroff -f
