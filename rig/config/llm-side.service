@@ -7,6 +7,10 @@ Wants=network-online.target
 User=al
 Environment=HOME=~
 EnvironmentFile=/opt/rig/llm-side.env
+# boot OOM guard (27.10.2026): strata-host anon ~55 GB; `strata launch` exits
+# before the engine finishes loading, so After= does not serialize RAM use.
+# Wait for main to be actually ready before side stages its own weights.
+ExecStartPre=/usr/bin/bash -c 'timeout 900 bash -c "until curl -sf http://localhost:8001/health >/dev/null; do sleep 5; done" || true'
 ExecStart=/opt/rig/llm-side.sh
 Restart=on-failure
 RestartSec=30

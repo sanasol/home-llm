@@ -1,0 +1,358 @@
+{
+ "apiVersion": 1,
+ "contactPoints": [
+  {
+   "orgId": 1,
+   "name": "tg-alerts",
+   "receivers": [
+    {
+     "uid": "tg",
+     "type": "webhook",
+     "settings": {
+      "url": "http://127.0.0.1:9095/",
+      "httpMethod": "POST"
+     }
+    }
+   ]
+  }
+ ],
+ "policies": [
+  {
+   "orgId": 1,
+   "receiver": "tg-alerts",
+   "group_by": [
+    "grafana_folder",
+    "alertname"
+   ]
+  }
+ ],
+ "groups": [
+  {
+   "orgId": 1,
+   "name": "rig-alerts",
+   "folder": "rig",
+   "interval": "1m",
+   "rules": [
+    {
+     "uid": "inst-down",
+     "title": "InstanceDown",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "target {{ $labels.job }}/{{ $labels.instance }} down"
+     },
+     "labels": {
+      "severity": "critical"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "up == 0",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "gpu-hot",
+     "title": "GpuHighTemp",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "GPU {{ $labels.uuid }} temp {{ $value }}C"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "nvidia_smi_temperature_gpu > 85",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "low-ram",
+     "title": "LowRAM",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "available RAM {{ $value }}B"
+     },
+     "labels": {
+      "severity": "critical"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "node_memory_MemAvailable_bytes < 4e9",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "disk-low",
+     "title": "DiskLow",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "10m",
+     "annotations": {
+      "summary": "/ avail {{ $value }}B"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"} < 5e10",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "litellm-errors",
+     "title": "LiteLLMErrorsHigh",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "failed req rate {{ $value }}/s"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "sum(rate(litellm_proxy_failed_requests_metric_total[5m])) > 0.5",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "gpu-xid",
+     "title": "GpuXidDetected",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "0m",
+     "annotations": {
+      "summary": "NVIDIA XID events in kernel log"
+     },
+     "labels": {
+      "severity": "critical"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "max_over_time(nvidia_xid_last15m[30m]) > 0",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "nvme-media",
+     "title": "NvmeMediaErrors",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "0m",
+     "annotations": {
+      "summary": "NVMe media errors {{ $value }} in 24h"
+     },
+     "labels": {
+      "severity": "critical"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 90000,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "increase(nvme_media_errors_total[1d]) > 0",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "nvme-wear",
+     "title": "NvmeWearHigh",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "30m",
+     "annotations": {
+      "summary": "NVMe wear {{ $value }} (>80%)"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "nvme_percentage_used_ratio > 0.8",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "gpu-thermal",
+     "title": "GpuThermalThrottle",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "GPU thermal/power-brake throttling active"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "sum(nvidia_smi_clocks_event_reasons_hw_thermal_slowdown) + sum(nvidia_smi_clocks_event_reasons_sw_thermal_slowdown) + sum(nvidia_smi_clocks_event_reasons_hw_power_brake_slowdown) > 0",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "gpu-count",
+     "title": "GpuCountDropped",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "5m",
+     "annotations": {
+      "summary": "fewer than 3 GPUs reporting"
+     },
+     "labels": {
+      "severity": "critical"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "count(nvidia_smi_temperature_gpu) < 3",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    },
+    {
+     "uid": "swap-low",
+     "title": "SwapAlmostGone",
+     "condition": "A",
+     "noDataState": "OK",
+     "execErrState": "OK",
+     "for": "10m",
+     "annotations": {
+      "summary": "swap free < 500MB (Strata offload starving)"
+     },
+     "labels": {
+      "severity": "warning"
+     },
+     "data": [
+      {
+       "refId": "A",
+       "relativeTimeRange": {
+        "from": 600,
+        "to": 0
+       },
+       "datasourceUid": "rigprom",
+       "model": {
+        "expr": "node_memory_SwapFree_bytes < 5e8",
+        "instant": true,
+        "refId": "A"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

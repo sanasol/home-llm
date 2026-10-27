@@ -1,0 +1,415 @@
+{
+ "title": "Rig overview",
+ "uid": "rig-overview",
+ "timezone": "browser",
+ "tags": [
+  "rig"
+ ],
+ "refresh": "30s",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "title": "LLM decode t/s (vLLM engines)",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "sum by (engine) (rate(vllm:generation_tokens_total[1m]))",
+     "legendFormat": "{{engine}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "Requests running / waiting",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 6,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "vllm:num_requests_running",
+     "legendFormat": "{{engine}} {{__name__}}"
+    },
+    {
+     "expr": "vllm:num_requests_waiting",
+     "legendFormat": "{{engine}} {{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "KV cache usage",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "vllm:gpu_cache_usage_perc",
+     "legendFormat": "{{engine}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "Prefix cache hit ratio",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "rate(vllm:external_prefix_cache_hits_total[5m]) / clamp_min(rate(vllm:external_prefix_cache_queries_total[5m]),0.001)",
+     "legendFormat": "{{engine}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "GPU util %",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "nvidia_smi_utilization_gpu_ratio",
+     "legendFormat": "{{uuid}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "GPU temp C",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 6,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "nvidia_smi_temperature_gpu",
+     "legendFormat": "{{uuid}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "GPU power W",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 12,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "nvidia_smi_power_draw_watts",
+     "legendFormat": "{{uuid}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "watt",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "SM clock MHz",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "nvidia_smi_clocks_current_sm_clock_hz / 1e6",
+     "legendFormat": "{{uuid}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "VRAM used",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "nvidia_smi_memory_used_bytes",
+     "legendFormat": "{{uuid}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "RAM available",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 6,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "node_memory_MemAvailable_bytes",
+     "legendFormat": "mem avail"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "CPU load / disk / avail",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 12,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "node_load1",
+     "legendFormat": "{{metric}}"
+    },
+    {
+     "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"}",
+     "legendFormat": "{{metric}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "LiteLLM req/s by model",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "sum by (requested_model) (rate(litellm_proxy_total_requests_metric_total[5m]))",
+     "legendFormat": "{{requested_model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  },
+  {
+   "title": "LiteLLM failed req/s",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 0,
+    "y": 24
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "targets": [
+    {
+     "expr": "sum by (model) (rate(litellm_proxy_failed_requests_metric_total[5m]))",
+     "legendFormat": "{{model}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 8
+     }
+    },
+    "overrides": []
+   }
+  }
+ ],
+ "schemaVersion": 39,
+ "version": 1
+}

@@ -1,42 +1,106 @@
-"""Rig monitor: one page for the whole box — Strata main (:8001), vLLM side (:8002), all three GPUs and the host.
+"""Rig monitor: one page for the whole box — Strata main (:8001) + two HyperQwen
+engines (:18020 A speed, :18021 B 262K), all three GPUs and the host.
 
-Samples Strata /metrics (JSON) and vLLM /metrics (Prometheus) every second, nvidia-smi for all GPUs,
-/proc for CPU/RAM/disk, hwmon for temps, and the llm-side journald access log for side requests.
-Keeps 15 minutes of history; serves the page + /api/state JSON on :8090. index.html is read per
-request, so page-only changes need no service restart.
+Samples Strata /metrics (JSON), both vLLM /metrics (Prometheus), nvidia-smi (+ dmon
+-s t for real PCIe Rx/Tx MB/s), /proc, hwmon and the journald access logs of both
+HyperQwen units. Every point is persisted to SQLite (hist.db): 1s resolution kept
+for 24h, 1-minute rollups for 7 days; finished request rows kept for 7 days too.
+Restarting the monitor backfills the live charts from the DB.
 
-Env: STRATA_URL, STRATA_KEY (JSON file with "api_key"), VLLM_URL, VLLM_ENV (KEY=VAL file with
-VLLM_API_KEY), SIDE_UNIT (llm-side), PORT (8090).
+API:  /api/state   live gauges + history ring (RAM) + recent requests
+      /api/history?range=1h|24h|7d | ?from=T&to=T   persisted points downsampled
+      /api/summary?range=... | ?from=T&to=T         per-engine totals over a window
+      /, /hw  pages (index.html / hw.html read per request)
+
+Env: STRATA_URL, STRATA_KEY (JSON with api_key), A_URL, B_URL, VLLM_ENV (KEY=VAL
+file with VLLM_API_KEY, shared by both HyperQwen), A_UNIT, B_UNIT, HIST_DB, PORT.
 """
-import json, os, re, subprocess, threading, time
+import json, os, re, sqlite3, subprocess, threading, time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 STRATA = os.environ.get("STRATA_URL", "http://127.0.0.1:8001")
 STRATA_KEY_FILE = os.path.expanduser(os.environ.get("STRATA_KEY", "~/.config/strata/launch-presets/main.json"))
-VLLM = os.environ.get("VLLM_URL", "http://127.0.0.1:8002")
-VLLM_ENV = os.environ.get("VLLM_ENV", "/opt/rig/llm-side.env")
-SIDE_UNIT = os.environ.get("SIDE_UNIT", "llm-side")
+A_URL = os.environ.get("A_URL", "http://127.0.0.1:18020")
+B_URL = os.environ.get("B_URL", "http://127.0.0.1:18021")
+VLLM_ENV = os.environ.get("VLLM_ENV", "/opt/rig/side.env")
+A_UNIT = os.environ.get("A_UNIT", "hyperqwen-a")
+B_UNIT = os.environ.get("B_UNIT", "hyperqwen-b")
+MAIN_UNIT = os.environ.get("MAIN_UNIT", "llm-main")
 PORT = int(os.environ.get("PORT", "8090"))
+HIST_DB = os.environ.get("HIST_DB", str(Path(__file__).with_name("hist.db")))
 HISTORY = 900
+ROLL_S = 60           # rollup bucket
+KEEP1 = 86400         # 1s points: 24h
+KEEP60 = 30 * 86400   # rollups + request rows: 30 days
 PAGE = Path(__file__).with_name("index.html")
+
+# engine table: the page and the request rows label by these keys
+ENG = {"main": {"label": "Flash-Next", "sub": "Strata :8001 · RTX 5090"},
+       "a": {"label": "Qwen 27B A", "sub": "HyperQwen :18020 · 3090 #1 · speed"},
+       "b": {"label": "Qwen 27B B", "sub": "HyperQwen :18021 · 3090 #2 · 262K"}}
 
 history = deque(maxlen=HISTORY)
 _last_gs = []
-state = {"main": {}, "side": {}, "side_stats": {}, "gpus": [], "host": {}, "services": {},
-         "requests": [], "side_requests": [], "clients": [], "updated": 0}
+state = {"eng": {k: {"stats": {}} for k in ENG}, "gpus": [], "host": {}, "services": {},
+         "requests": [], "clients": [], "updated": 0}
 lock = threading.Lock()
 
 GPU_FIELDS = ["index", "name", "uuid", "utilization.gpu", "memory.used", "memory.total",
               "temperature.gpu", "power.draw", "power.limit", "fan.speed",
               "pcie.link.gen.current", "pcie.link.width.current"]
-METRIC_RE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+(\S+)$')
-# uvicorn access line from vLLM: INFO:     <tailscale-ip>:49563 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+METRIC_RE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?([^}]*)\}?\s+(\S+)$')
 ACCESS_RE = re.compile(r'"(?P<method>[A-Z]+) (?P<path>\S+) HTTP/[^"]*"\s+(?P<status>\d{3})\b')
 CLIENT_RE = re.compile(r'(?P<ip>[\w.]+):\d+ - ')
 CHAT_PATHS = ("/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/completions")
+
+DB_LOCK = threading.Lock()
+
+
+def db():
+    con = sqlite3.connect(HIST_DB, timeout=10)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
+    return con
+
+
+def db_init():
+    with DB_LOCK, db() as con:
+        con.executescript(
+            "CREATE TABLE IF NOT EXISTS hist1(t REAL PRIMARY KEY, j TEXT);"
+            "CREATE TABLE IF NOT EXISTS hist60(t REAL PRIMARY KEY, j TEXT);"
+            "CREATE TABLE IF NOT EXISTS hw60(t REAL PRIMARY KEY, j TEXT);"
+            "CREATE TABLE IF NOT EXISTS reqs(t REAL, eng TEXT, j TEXT);")
+
+
+def db_insert(table, t, j):
+    with DB_LOCK, db() as con:
+        con.execute(f"INSERT OR REPLACE INTO {table}(t,j) VALUES(?,?)", (t, json.dumps(j)))
+
+
+def db_insert_req(t, eng, j):
+    with DB_LOCK, db() as con:
+        con.execute("INSERT INTO reqs(t,eng,j) VALUES(?,?,?)", (t, eng, json.dumps(j)))
+
+
+def db_prune(now):
+    with DB_LOCK, db() as con:
+        con.execute("DELETE FROM hist1 WHERE t < ?", (now - KEEP1,))
+        con.execute("DELETE FROM hist60 WHERE t < ?", (now - KEEP60,))
+        con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEP60,))
+
+
+def db_backfill():
+    try:
+        with DB_LOCK, db() as con:
+            rows = con.execute("SELECT t,j FROM hist1 ORDER BY t DESC LIMIT ?", (HISTORY,)).fetchall()
+        for t, j in reversed(rows):
+            history.append(json.loads(j))
+    except sqlite3.Error:
+        pass
 
 
 def key_from_json(path):
@@ -70,17 +134,26 @@ def scrape(url, key):
     for line in urlopen(req, timeout=3).read().decode().splitlines():
         m = METRIC_RE.match(line)
         if m and "le=" not in (m.group(2) or ""):  # skip histogram buckets
-            out[m.group(1) + (m.group(2) or "")] = float(m.group(3))
+            out[m.group(1) + ("{" + m.group(2) + "}" if m.group(2) else "")] = float(m.group(3))
     return out
 
 
 def getp(m, prefix, suffix=""):
-    """Sum of values whose bare metric name (no labels) starts with prefix and ends with suffix.
-    Sums across label variants (e.g. request_success_total{finished_reason=...})."""
+    """Sum of values whose bare metric name (no labels) starts with prefix and ends with suffix."""
     v = None
     for k, val in m.items():
         bare = k.split("{")[0]
         if bare.startswith(prefix) and bare.endswith(suffix):
+            v = (v or 0) + val
+    return v
+
+
+def getx(m, name):
+    """Exact bare metric name (HyperQwen adds *_by_source_total / *_cached_total variants
+    that a prefix match would double-count)."""
+    v = None
+    for k, val in m.items():
+        if k.split("{")[0] == name:
             v = (v or 0) + val
     return v
 
@@ -94,7 +167,6 @@ def gpus():
         if len(vals) != len(GPU_FIELDS):
             continue
         g = dict(zip(GPU_FIELDS, vals))
-        g["uuid"] = g["uuid"]
         for k in GPU_FIELDS:
             if k in ("name", "uuid"):
                 continue
@@ -102,20 +174,30 @@ def gpus():
                 g[k] = float(g[k])
             except ValueError:
                 g[k] = None
-        # short label: model name + which engine owns it (5090 = main, 3090s = side)
-        short = "5090" if "5090" in g["name"] else "3090"
-        g["label"] = short
         out.append(g)
     n3090 = 0
     for g in out:
+        g["label"] = "5090" if "5090" in g["name"] else "3090"
         if g["label"] == "3090":
             n3090 += 1
             g["label"] = f"3090 #{n3090}"
+    # real PCIe throughput (NVML counters via dmon); one 1s sample
+    try:
+        d = subprocess.run(["nvidia-smi", "dmon", "-s", "t", "-c", "1"], capture_output=True, text=True, timeout=5)
+        for line in d.stdout.splitlines():
+            p = line.split()
+            if p and p[0].isdigit() and len(p) in (3, 5):
+                off = 2 if len(p) == 5 else 0
+                g = next((x for x in out if int(float(x["index"])) == int(p[off])), None)
+                if g:
+                    g["pcie_rx_mbps"] = float(p[off + 1])
+                    g["pcie_tx_mbps"] = float(p[off + 2])
+    except Exception:
+        pass
     return out
 
 
 def hwmon_temp(names):
-    """First temperature (°C) from an hwmon chip whose name matches one of `names`."""
     try:
         for d in Path("/sys/class/hwmon").iterdir():
             try:
@@ -153,7 +235,6 @@ def _cpu_stat():
 
 
 def _disk_sectors():
-    """(read, write) MiB counters over all nvme* block devices (whole-disk rows only)."""
     r = w = 0
     try:
         for line in open("/proc/diskstats"):
@@ -196,7 +277,6 @@ def cpudisk():
 
 
 def hwmon_all():
-    """Every chip in /sys/class/hwmon: all temperatures (with labels where present) and fans."""
     out = []
     for d in sorted(Path("/sys/class/hwmon").glob("hwmon*")):
         try:
@@ -209,7 +289,7 @@ def hwmon_all():
                 v = int(f.read_text())
             except (OSError, ValueError):
                 continue
-            base = f.name[:-len("_input")]  # temp1_input -> temp1 (label file: temp1_label)
+            base = f.name[:-len("_input")]
             try:
                 label = (d / (base + "_label")).read_text().strip()
             except OSError:
@@ -271,170 +351,147 @@ def host():
             "threads": os.cpu_count(), "cpu_name": cpu_name()}
 
 
-def _access_rows(window=300):
-    """New vLLM access rows (chat-ish POSTs) since the last call, tracked by journal cursor.
-    Numeric fields are attached later from Prometheus deltas (see attribute)."""
-    r = subprocess.run(["journalctl", "-u", SIDE_UNIT, "-b", "-o", "json", "-n", str(window), "--no-pager"],
-                       capture_output=True, text=True, timeout=10)
-    out = []
-    for line in r.stdout.splitlines():
-        try:
-            j = json.loads(line)
-        except ValueError:
-            continue
-        cur, msg = j.get("__CURSOR"), j.get("MESSAGE")
-        if not cur or not isinstance(msg, str):
-            continue
-        a = ACCESS_RE.search(msg)
-        c = CLIENT_RE.search(msg)
-        if not a or not c:
-            continue
-        path = a.group("path").split("?")[0]
-        if a.group("method") != "POST" or not path.startswith(CHAT_PATHS):
-            continue
-        if cur in _side_cursors:
-            continue
-        _side_cursors.add(cur)
-        out.append({"ts": int(j["__REALTIME_TIMESTAMP"]) / 1e6, "path": path,
-                    "status": int(a.group("status")), "client": c.group("ip"),
-                    "prompt": None, "output": None, "dur": None, "ttft": None,
-                    "prefill_tps": None, "decode_tps": None, "approx": False, "n": 1})
-    out.sort(key=lambda x: x["ts"])
-    return out
-
-
-# vLLM V1 histogram families: one observation per finished request (sum + count).
+# ------------------------------------------------------------- vLLM engines (A and B)
 HIST_KEYS = {"n": "vllm:e2e_request_latency_seconds", "prompt": "vllm:request_prompt_tokens",
              "out": "vllm:request_generation_tokens", "prefill": "vllm:request_prefill_time_seconds",
              "decode": "vllm:request_decode_time_seconds", "ttft": "vllm:time_to_first_token"}
 
 
-def side_hist(m):
-    return {tag: (getp(m, name, "_sum"), getp(m, name, "_count")) for tag, name in HIST_KEYS.items()}
+class VllmLog:
+    """Access rows + histogram attribution for ONE vLLM unit (mirrors the old side_* globals)."""
 
+    def __init__(self, unit):
+        self.unit = unit
+        self.rows = []
+        self.cursors = set()
+        self.hist_prev = None
+        self.base_ts = 0.0
+        self.acc = None
+        self.acc_t = 0.0
+        self.acc_end = 0.0
+        self.hist_t = 0.0
 
-_side_rows = []
-_side_cursors = set()
-_side_hist_prev = None
-_side_base_ts = 0.0  # rows completed before the histogram baseline can never get numbers
-_side_acc = None     # histogram sums of completions not yet handed to access rows
-_side_acc_t = 0.0    # first tick the current accumulator window started
-_side_acc_end = 0.0  # last tick the accumulator saw new completions
-_side_hist_t = 0.0   # timestamp of the previous successful histogram scrape
+    def access_rows(self, window=300):
+        r = subprocess.run(["journalctl", "-u", self.unit, "-b", "-o", "json", "-n", str(window), "--no-pager"],
+                           capture_output=True, text=True, timeout=10)
+        out = []
+        for line in r.stdout.splitlines():
+            try:
+                j = json.loads(line)
+            except ValueError:
+                continue
+            cur, msg = j.get("__CURSOR"), j.get("MESSAGE")
+            if not cur or not isinstance(msg, str):
+                continue
+            a = ACCESS_RE.search(msg)
+            c = CLIENT_RE.search(msg)
+            if not a or not c:
+                continue
+            path = a.group("path").split("?")[0]
+            if a.group("method") != "POST" or not path.startswith(CHAT_PATHS):
+                continue
+            if cur in self.cursors:
+                continue
+            self.cursors.add(cur)
+            out.append({"ts": int(j["__REALTIME_TIMESTAMP"]) / 1e6, "path": path,
+                        "status": int(a.group("status")), "client": c.group("ip"),
+                        "prompt": None, "output": None, "dur": None, "ttft": None,
+                        "prefill_tps": None, "decode_tps": None, "approx": False, "n": 1,
+                        "saved": False})
+        out.sort(key=lambda x: x["ts"])
+        return out
 
+    def hist(self, m):
+        return {tag: (getp(m, name, "_sum"), getp(m, name, "_count")) for tag, name in HIST_KEYS.items()}
 
-def attribute(hist):
-    """Accumulate histogram sums of finished completions; hand them to un-numbered access rows whose
-    journal time falls inside the window those completions finished in. The journal line and the
-    counter can surface on different ticks in either order - the accumulator bridges that race.
-    Time-window matching prevents rows from a dead vLLM instance (killed orphans, backfilled
-    journal) or pre-restart backlog from stealing a live request's numbers.
-    One completion in the window -> exact per row; several -> averages marked approx."""
-    global _side_hist_prev, _side_base_ts, _side_acc, _side_acc_t, _side_acc_end, _side_hist_t
-    if not hist:
-        return
-    now = time.time()
-    if _side_hist_prev is None:
-        _side_hist_prev, _side_base_ts, _side_hist_t = hist, now, now
-        return
-    prev = _side_hist_prev
+    def attribute(self, hist):
+        if not hist:
+            return
+        now = time.time()
+        if self.hist_prev is None:
+            self.hist_prev, self.base_ts, self.hist_t = hist, now, now
+            return
+        prev = self.hist_prev
 
-    def delta(tag):
-        s1, c1 = hist[tag]
-        s0, c0 = prev[tag]
-        if None in (s1, c1, s0, c0):
-            return 0.0, 0
-        return max(0.0, s1 - s0), max(0, int(round(c1 - c0)))
+        def delta(tag):
+            s1, c1 = hist[tag]
+            s0, c0 = prev[tag]
+            if None in (s1, c1, s0, c0):
+                return 0.0, 0
+            return max(0.0, s1 - s0), max(0, int(round(c1 - c0)))
 
-    if hist["n"][1] is not None and prev["n"][1] is not None and hist["n"][1] < prev["n"][1]:
-        # vLLM restarted: counters reset; rows before now are unattributable, take a fresh baseline
-        _side_hist_prev, _side_base_ts, _side_acc = hist, now, None
-        _side_hist_t = now
-        return
-    w_start, w_end = _side_hist_t, now
-    _side_hist_t = now
+        if hist["n"][1] is not None and prev["n"][1] is not None and hist["n"][1] < prev["n"][1]:
+            self.hist_prev, self.base_ts, self.acc = hist, now, None
+            self.hist_t = now
+            return
+        w_start, w_end = self.hist_t, now
+        self.hist_t = now
 
-    n_new = delta("n")[1]
-    if n_new > 0:
-        if _side_acc is None:
-            _side_acc = {tag: [0.0, 0] for tag in HIST_KEYS}
-            _side_acc_t, _side_acc_end = w_start, w_end
-        else:
-            _side_acc_t = min(_side_acc_t, w_start)
-            _side_acc_end = max(_side_acc_end, w_end)
+        n_new = delta("n")[1]
+        if n_new > 0:
+            if self.acc is None:
+                self.acc = {tag: [0.0, 0] for tag in HIST_KEYS}
+                self.acc_t, self.acc_end = w_start, w_end
+            else:
+                self.acc_t = min(self.acc_t, w_start)
+                self.acc_end = max(self.acc_end, w_end)
+            for tag in HIST_KEYS:
+                d_s, d_c = delta(tag)
+                self.acc[tag][0] += d_s
+                self.acc[tag][1] += d_c
+        self.hist_prev = hist
+
+        if self.acc is None:
+            return
+        n = self.acc["n"][1]
+        if n <= 0:
+            return
+        if now - self.acc_end > 900:
+            self.acc = None
+            return
+        pend = sorted((r for r in self.rows if r["prompt"] is None and r["status"] == 200
+                       and self.acc_t - 5 <= (r["ts"] or 0) <= self.acc_end + 15), key=lambda r: r["ts"] or 0)
+        k = min(n, len(pend))
+        if not k:
+            return
+        s = {tag: self.acc[tag][0] for tag in HIST_KEYS}
+        per = lambda tag: s[tag] / n
+        for r in pend[:k]:
+            r["prompt"] = round(per("prompt"))
+            r["output"] = round(per("out"))
+            r["dur"] = round(per("n"), 1)
+            if s["ttft"]:
+                r["ttft"] = round(per("ttft"), 2)
+            if s["prefill"] > 0:
+                r["prefill_tps"] = round(per("prompt") / per("prefill"))
+            if s["decode"] > 0:
+                r["decode_tps"] = round(per("out") / per("decode"))
+            r["n"] = n
+            r["approx"] = n > 1
         for tag in HIST_KEYS:
-            d_s, d_c = delta(tag)
-            _side_acc[tag][0] += d_s
-            _side_acc[tag][1] += d_c
-    _side_hist_prev = hist
+            self.acc[tag][0] -= s[tag] * k / n
+            self.acc[tag][1] -= k
+        if self.acc["n"][1] <= 0:
+            self.acc = None
 
-    if _side_acc is None:
-        return
-    n = _side_acc["n"][1]
-    if n <= 0:
-        return
-    if now - _side_acc_end > 900:
-        # the access rows never surfaced: drop the sums so they cannot leak onto a later request
-        _side_acc = None
-        return
-    # match by completion time: the journal line timestamps the completion; rows far outside the
-    # window belong to another instance or another era and must never take these numbers
-    pend = sorted((r for r in _side_rows if r["prompt"] is None and r["status"] == 200
-                   and _side_acc_t - 5 <= (r["ts"] or 0) <= _side_acc_end + 15), key=lambda r: r["ts"] or 0)
-    k = min(n, len(pend))
-    if not k:
-        return
-    s = {tag: _side_acc[tag][0] for tag in HIST_KEYS}
-    per = lambda tag: s[tag] / n
-    for r in pend[:k]:
-        r["prompt"] = round(per("prompt"))
-        r["output"] = round(per("out"))
-        r["dur"] = round(per("n"), 1)
-        if s["ttft"]:
-            r["ttft"] = round(per("ttft"), 2)
-        if s["prefill"] > 0:
-            r["prefill_tps"] = round(per("prompt") / per("prefill"))
-        if s["decode"] > 0:
-            r["decode_tps"] = round(per("out") / per("decode"))
-        r["n"] = n
-        r["approx"] = n > 1
-    for tag in HIST_KEYS:  # consume exactly the k handed-out completions
-        _side_acc[tag][0] -= s[tag] * k / n
-        _side_acc[tag][1] -= k
-    print(f"attr: window_n={n} handed={k} kept={_side_acc['n'][1]}", flush=True)
-    if _side_acc["n"][1] <= 0:
-        _side_acc = None
+    def persist(self, eng):
+        for r in self.rows:
+            if r["prompt"] is not None and not r["saved"]:
+                r["saved"] = True
+                db_insert_req(r["ts"], eng, r)
+
+    def clients(self):
+        clients = {}
+        for row in self.rows:
+            cl = clients.setdefault(row["client"], {"n": 0, "last": row["ts"]})
+            cl["n"] += 1
+            cl["last"] = max(cl["last"], row["ts"])
+        cl = [{"client": k, **v} for k, v in clients.items()]
+        cl.sort(key=lambda x: -x["last"])
+        return cl[:10]
 
 
-def side_clients():
-    clients = {}
-    for row in _side_rows:
-        cl = clients.setdefault(row["client"], {"n": 0, "last": row["ts"]})
-        cl["n"] += 1
-        cl["last"] = max(cl["last"], row["ts"])
-    cl = [{"client": k, **v} for k, v in clients.items()]
-    cl.sort(key=lambda x: -x["last"])
-    return cl[:10]
-
-
-def side_info():
-    """Side engine facts from the vLLM startup log: KV pool in tokens and max context length."""
-    # no -n here: journalctl truncates to N lines BEFORE applying -g, which drops the startup lines
-    r = subprocess.run(["journalctl", "-u", SIDE_UNIT, "-b", "-o", "cat", "--no-pager",
-                        "-g", "KV cache size|Maximum concurrency"], capture_output=True, text=True, timeout=20)
-    out = {}
-    for line in r.stdout.splitlines():
-        k = re.search(r"KV cache size: ([\d,]+) tokens", line)
-        if k:
-            out["kv_tokens"] = int(k.group(1).replace(",", ""))
-        m = re.search(r"Maximum concurrency for ([\d,]+) tokens", line)
-        if m:
-            out["max_len"] = int(m.group(1).replace(",", ""))
-    return out
-
-
-def side_derived(m, prev, prev_t):
-    """Numbers the page shows for vLLM: gauges, cache/spec stats from counters, tok/s from deltas."""
+def vllm_derived(m, prev, prev_t):
     d = {}
     d["running"] = getp(m, "vllm:num_requests_running")
     d["waiting"] = getp(m, "vllm:num_requests_waiting")
@@ -446,11 +503,8 @@ def side_derived(m, prev, prev_t):
     d["mtp_pct"] = round(100 * ac / dq, 1) if dq and ac is not None else None
     nst = getp(m, "vllm:spec_decode_num_drafts_total")
     d["mtp_len"] = round(1 + (ac / nst), 2) if nst and ac is not None else None
-    d["mtp_acc"] = ac
     d["preempts"] = getp(m, "vllm:num_preemptions_total")
     n = getp(m, "vllm:request_success_total")
-    if n is None:
-        n = getp(m, "vllm:conversation_completed_responses_total")
     tsu, tc = getp(m, "vllm:time_to_first_token", "_sum"), getp(m, "vllm:time_to_first_token", "_count")
     d["ttft"] = round(tsu / tc, 2) if tc and tsu is not None else None
     ps, pc = getp(m, "vllm:request_prompt_tokens", "_sum"), getp(m, "vllm:request_prompt_tokens", "_count")
@@ -458,33 +512,79 @@ def side_derived(m, prev, prev_t):
     gs, gc = getp(m, "vllm:request_generation_tokens", "_sum"), getp(m, "vllm:request_generation_tokens", "_count")
     d["avg_out"] = round(gs / gc) if gc and gs is not None else None
     d["requests"] = n
+    # counters for the persisted summary (exact names: prefix matching double-counts
+    # vllm:prompt_tokens_by_source_total / _cached_total on HyperQwen)
+    d["_c"] = {"req": n or 0,
+               "prompt": getx(m, "vllm:prompt_tokens_total") or 0,
+               "reused": getx(m, "vllm:prompt_tokens_cached_total") or 0,
+               "gen": getx(m, "vllm:generation_tokens_total") or 0,
+               "pre_s": getp(m, "vllm:request_prefill_time_seconds", "_sum") or 0,
+               "dec_s": getp(m, "vllm:request_decode_time_seconds", "_sum") or 0}
     if prev and prev_t:
         dt = time.time() - prev_t
         if dt > 0:
-            def delta(prefix):
-                a, b = getp(m, prefix, "_total"), getp(prev, prefix, "_total")
+            def delta(name, want=None):
+                def val(mm):
+                    tot = None
+                    for k, x in mm.items():
+                        bare, rest = k.split("{", 1) if "{" in k else (k, "")
+                        if bare != name or (want and want not in rest):
+                            continue
+                        tot = (tot or 0) + x
+                    return tot
+                a, b = val(m), val(prev)
                 return round(max(0.0, a - b) / dt, 1) if a is not None and b is not None else None
-            d["prefill_tps"] = delta("vllm:prompt_tokens")
-            d["decode_tps"] = delta("vllm:generation_tokens")
+            # real compute only: prompt_tokens_total also counts cache-hit tokens -> absurd spikes
+            d["prefill_tps"] = delta("vllm:prompt_tokens_by_source_total", 'source="local_compute"')
+            d["decode_tps"] = delta("vllm:generation_tokens_total")
     return d
+
+
+_info_cache = {}  # unit -> (t, data); startup facts, refresh is rare
+
+
+def engine_info(unit):
+    hit = _info_cache.get(unit)
+    if hit and time.time() - hit[0] < 1800:
+        return hit[1]
+    r = subprocess.run(["journalctl", "-u", unit, "-b", "-o", "cat", "--no-pager",
+                        "-g", "GPU KV cache size"], capture_output=True, text=True, timeout=60)
+    out = {}
+    for line in r.stdout.splitlines():
+        k = re.search(r"GPU KV cache size: ([\d,]+) tokens", line)
+        if k:
+            out["kv_tokens"] = int(k.group(1).replace(",", ""))
+        m = re.search(r"Maximum concurrency for ([\d,]+) tokens", line)
+        if m:
+            out["max_len"] = int(m.group(1).replace(",", ""))
+    if out:
+        _info_cache[unit] = (time.time(), out)
+    return out or (hit[1] if hit else {})
 
 
 def service_state(unit):
     return subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True).stdout.strip()
 
 
+LOGS = {"a": VllmLog(A_UNIT), "b": VllmLog(B_UNIT)}
+_main_req_ts = 0.0   # persist Strata rows newer than this
+
+
 def sample(prev, prev_t, tick):
-    global _last_gs
+    global _last_gs, _main_req_ts
     t = time.time()
-    main = side = None
+    main = None
+    raws = {}
     try:
         main = http_json(STRATA + "/metrics", key_from_json(STRATA_KEY_FILE), "requests=all")
     except Exception:
         pass
-    try:
-        side = scrape(VLLM, key_from_env(VLLM_ENV))
-    except Exception:
-        pass
+    vkey = key_from_env(VLLM_ENV)
+    for eid, url in (("a", A_URL), ("b", B_URL)):
+        try:
+            raws[eid] = scrape(url, vkey)
+        except Exception:
+            raws[eid] = None
     g = []
     if tick % 2 == 0:
         try:
@@ -499,95 +599,286 @@ def sample(prev, prev_t, tick):
         hw = hwmon_all()
     except Exception:
         hw = state.get("hw", [])
-    sd = side_derived(side, prev, prev_t) if side else {}
 
-    util = [x["utilization.gpu"] for x in g if x.get("utilization.gpu") is not None]
-    temps = [x["temperature.gpu"] for x in g if x.get("temperature.gpu") is not None]
-    vram_u = sum(x["memory.used"] or 0 for x in g)
-    vram_t = sum(x["memory.total"] or 0 for x in g)
-    power = sum(x["power.draw"] or 0 for x in g)
     mlive = (main or {}).get("live", {})
     mr = (main or {}).get("requests", [])
+    mtot = (main or {}).get("totals", {})
     ctx_max = float((main or {}).get("engine", {}).get("max_context") or 0)
     held = max([s.get("held_tokens", 0) for s in mlive.get("slots", [])] or [0])
-    last_side = history[-1] if history else {}
 
+    stats = {"main": {}}
+    if main:
+        st = {"running": mlive.get("running"), "state": mlive.get("state"),
+              "decode_tps": mlive.get("tok_s") if isinstance(mlive.get("tok_s"), (int, float)) else None,
+              "prefill_tps": mlive.get("prefill_tok_s_mean"),
+              "ctx_pct": round(100 * held / ctx_max, 1) if ctx_max else None,
+              "ctx_max": ctx_max or None,
+              "prefix_pct": round(100 * mtot.get("reused", 0) / mtot["prompt_tokens"], 1) if mtot.get("prompt_tokens") else None,
+              "ttft": None, "requests": mtot.get("requests"),
+              "avg_prompt": None, "avg_out": None, "kv_pct": None,
+              "_c": {"req": mtot.get("requests", 0), "prompt": mtot.get("prompt_tokens", 0),
+                     "reused": mtot.get("reused", 0), "gen": mtot.get("output_tokens", 0),
+                     "pre_s": mtot.get("prompt_ms", 0) / 1000, "dec_s": mtot.get("decode_ms", 0) / 1000}}
+        stats["main"] = st
+    for eid in ("a", "b"):
+        d = vllm_derived(raws[eid], prev.get(eid), prev_t) if raws[eid] else {}
+        d.update(_info_cache.get(log_unit(eid), (0, {}))[1])  # cached by the info_refresher thread
+        stats[eid] = d
+
+    last_pt = history[-1] if history else {}
+    def livev(eid, key, hkey):
+        v = stats.get(eid, {}).get(key)
+        if v is not None:
+            return v
+        act = stats.get(eid, {}).get("running") or stats.get(eid, {}).get("state") in ("generating", "reading")
+        return last_pt.get(hkey) if act else None
+    util = [x["utilization.gpu"] for x in g if x.get("utilization.gpu") is not None] if g else []
+    temps = [x["temperature.gpu"] for x in g if x.get("temperature.gpu") is not None] if g else []
     point = {"t": round(t, 1),
              "gpu_util": round(sum(util) / len(util), 1) if util else None,
              "gpu_temp": max(temps) if temps else None,
-             "gpu_power": round(power, 0),
-             "vram_gib": round(vram_u / 1024, 1),
+             "gpu_power": round(sum(x["power.draw"] or 0 for x in g), 0) if g else None,
+             "vram_gib": round(sum(x["memory.used"] or 0 for x in g) / 1024, 1) if g else None,
              "cpu_pct": c["cpu_pct"], "disk_r_mbps": c["disk_r_mbps"], "disk_w_mbps": c["disk_w_mbps"],
-             "main_tps": mlive.get("tok_s") if isinstance(mlive.get("tok_s"), (int, float)) else (
-                 last_side.get("main_tps") if mlive.get("state") in ("generating", "reading") else None),
-             "main_prefill_tps": mlive.get("prefill_tok_s_mean"),
-             "main_running": mlive.get("running"),
-             "main_ctx_pct": round(100 * held / ctx_max, 2) if ctx_max else None,
-             "side_tps": sd.get("decode_tps"), "side_prefill_tps": sd.get("prefill_tps"),
-             "side_running": sd.get("running"), "side_waiting": sd.get("waiting"),
-             "side_kv_pct": sd.get("kv_pct")}
+             "main_tps": livev("main", "decode_tps", "main_tps"),
+             "main_prefill_tps": stats["main"].get("prefill_tps") or last_pt.get("main_prefill_tps"),
+             "main_running": stats["main"].get("running"),
+             "main_ctx_pct": stats["main"].get("ctx_pct"),
+             "a_tps": livev("a", "decode_tps", "a_tps"), "a_prefill_tps": stats["a"].get("prefill_tps"),
+             "a_running": stats["a"].get("running"), "a_waiting": stats["a"].get("waiting"),
+             "a_kv_pct": stats["a"].get("kv_pct"),
+             "b_tps": livev("b", "decode_tps", "b_tps"), "b_prefill_tps": stats["b"].get("prefill_tps"),
+             "b_running": stats["b"].get("running"), "b_waiting": stats["b"].get("waiting"),
+             "b_kv_pct": stats["b"].get("kv_pct")}
+    point["counters"] = {"m": stats["main"].get("_c"), "a": stats["a"].get("_c"), "b": stats["b"].get("_c")}
     gs = sorted(g, key=lambda x: x.get("index") or 0) if g else _last_gs
-    if gs:  # per-GPU series so every chart can draw one line per card with a labelled tooltip
+    if gs:
         _last_gs = gs
         point["gpu_util_by"] = [x.get("utilization.gpu") for x in gs]
         point["gpu_temp_by"] = [x.get("temperature.gpu") for x in gs]
         point["gpu_power_by"] = [round(x.get("power.draw") or 0, 1) for x in gs]
-        point["vram_by"] = [x.get("memory.used") for x in gs]  # MiB
-    info = None
-    if tick % 5 == 0:
+        point["vram_by"] = [x.get("memory.used") for x in gs]
+        point["pcie_rx_by"] = [x.get("pcie_rx_mbps") for x in gs]
+        point["pcie_tx_by"] = [x.get("pcie_tx_mbps") for x in gs]
+
+    # request rows
+    for eid, log in LOGS.items():
         try:
-            info = side_info()
+            log.rows.extend(log.access_rows(window=300))
+            if len(log.rows) > 400:
+                del log.rows[:-400]
         except Exception:
             pass
-    if info:
-        state["side_info"] = info
-    try:  # new access rows every tick: keeps per-request numbers aligned with histogram deltas
-        _side_rows.extend(_access_rows(window=300))
-        if len(_side_rows) > 400:
-            del _side_rows[:-400]
-    except Exception:
-        pass
-    attribute(side_hist(side) if side else None)
-    sd = {**sd, **state.get("side_info", {})} if sd else state.get("side_info", {})
-    svc = {"main": service_state("llm-main"), "side": service_state(SIDE_UNIT)} if tick % 5 == 0 else None
+        log.attribute(log.hist(raws[eid]) if raws[eid] else None)
+        log.persist(eid)
+    svc = None
+    if tick % 5 == 0:
+        svc = {"main": service_state(MAIN_UNIT), "a": service_state(A_UNIT), "b": service_state(B_UNIT)}
 
     with lock:
         history.append(point)
-        state.update(main=main or state["main"], side=side or state["side"], side_stats=sd or state["side_stats"],
-                     host=h, hw=hw, updated=t)
+        state["eng"] = {"main": {"live": main or state["eng"]["main"].get("live"), "stats": stats["main"] or state["eng"]["main"]["stats"]},
+                        "a": {"stats": stats["a"] or state["eng"]["a"]["stats"]},
+                        "b": {"stats": stats["b"] or state["eng"]["b"]["stats"]}}
+        state["host"] = h
+        state["hw"] = hw
+        state["updated"] = t
         if g:
             state["gpus"] = g
-        if main:
-            rows = []
-            for r in mr:
-                prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
-                rows.append({"ts": float(r.get("time") or 0), "src": "main", "status": r.get("finish"),
-                             "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
-                             "output": r.get("output_tokens"), "prefill_tps": prefill,
-                             "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
-                             "hit": r.get("hit_rate")})
-            state["requests"] = sorted(rows, key=lambda r: r["ts"] or 0)  # Strata sends newest-first
-        state["side_requests"] = [r for r in _side_rows if (r["ts"] or 0) >= _side_base_ts]  # chronological; the page sorts newest-first
-        state["clients"] = side_clients()
+        rows = []
+        for r in mr:
+            prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
+            rows.append({"ts": float(r.get("time") or 0), "eng": "main", "status": r.get("finish"),
+                         "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
+                         "output": r.get("output_tokens"), "prefill_tps": prefill,
+                         "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
+                         "hit": r.get("hit_rate")})
+            if r.get("time") and r["time"] > _main_req_ts:
+                _main_req_ts = r["time"]
+                db_insert_req(r["time"], "main", {"ts": r["time"], "status": r.get("finish"),
+                                                  "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
+                                                  "output": r.get("output_tokens"), "dur": r.get("duration_s"),
+                                                  "decode_tps": r.get("decode_tok_s")})
+        srows = []
+        for eid, log in LOGS.items():
+            for r in log.rows:
+                if (r["ts"] or 0) >= log.base_ts:
+                    srows.append({**r, "eng": eid})
+        state["requests"] = sorted(rows + srows, key=lambda r: r["ts"] or 0)  # chronological; page sorts newest-first
+        state["clients"] = [{"eng": e, **cl} for e, log in LOGS.items() for cl in log.clients()][:12]
         if svc:
             state["services"] = svc
-    return (side, t) if side else (prev, prev_t)
+    db_insert("hist1", t, point)
+    if tick % ROLL_S == 0:
+        rollup_and_prune()
+    return {eid: raws[eid] for eid in ("a", "b")}, t
+
+
+def rollup_and_prune():
+    """Average the last ROLL_S hist1 points into hist60 (counters stay as last-of-window)."""
+    now = time.time()
+    try:
+        with DB_LOCK, db() as con:
+            rows = con.execute("SELECT t,j FROM hist1 WHERE t > ? AND t <= ? ORDER BY t",
+                               (now - ROLL_S, now)).fetchall()
+            if not rows:
+                return
+            pts = [json.loads(j) for _, j in rows]
+
+            def avg(key):
+                vals = [p.get(key) for p in pts if isinstance(p.get(key), (int, float))]
+                return round(sum(vals) / len(vals), 2) if vals else None
+
+            def avgby(key):
+                cols = [p.get(key) for p in pts if isinstance(p.get(key), list)]
+                if not cols:
+                    return None
+                m = max(len(c) for c in cols)
+                out = []
+                for i in range(m):
+                    vals = [c[i] for c in cols if i < len(c) and isinstance(c[i], (int, float))]
+                    out.append(round(sum(vals) / len(vals), 2) if vals else None)
+                return out
+
+            last = pts[-1]
+            r = {"t": round(now / ROLL_S) * ROLL_S, "n": len(pts),
+                 "cpu_pct": avg("cpu_pct"), "disk_r_mbps": avg("disk_r_mbps"), "disk_w_mbps": avg("disk_w_mbps"),
+                 "gpu_util": avg("gpu_util"), "gpu_temp": avg("gpu_temp"), "gpu_power": avg("gpu_power"),
+                 "vram_gib": avg("vram_gib"),
+                 "main_tps": avg("main_tps"), "main_prefill_tps": avg("main_prefill_tps"),
+                 "a_tps": avg("a_tps"), "a_prefill_tps": avg("a_prefill_tps"), "a_kv_pct": avg("a_kv_pct"),
+                 "b_tps": avg("b_tps"), "b_prefill_tps": avg("b_prefill_tps"), "b_kv_pct": avg("b_kv_pct")}
+            for key in ("gpu_util_by", "gpu_temp_by", "gpu_power_by", "vram_by", "pcie_rx_by", "pcie_tx_by"):
+                r[key] = avgby(key)
+            r["counters"] = last.get("counters")
+            con.execute("INSERT OR REPLACE INTO hist60(t,j) VALUES(?,?)", (r["t"], json.dumps(r)))
+            # hardware page series: full hwmon snapshot + GPU temps/fans + cpu clock, once a minute
+            snap = {"t": r["t"], "hw": state.get("hw", []),
+                    "gpus": [{"index": g.get("index"), "label": g.get("label"), "name": g.get("name"),
+                              "temperature.gpu": g.get("temperature.gpu"), "fan.speed": g.get("fan.speed"),
+                              "power.draw": g.get("power.draw")} for g in state.get("gpus", [])],
+                    "host": {k: (state.get("host") or {}).get(k) for k in ("cpu_ghz", "load1", "load5", "cpu_temp")}}
+            con.execute("INSERT OR REPLACE INTO hw60(t,j) VALUES(?,?)", (r["t"], json.dumps(snap)))
+            con.execute("DELETE FROM hist1 WHERE t < ?", (now - KEEP1,))
+            con.execute("DELETE FROM hist60 WHERE t < ?", (now - KEEP60,))
+            con.execute("DELETE FROM hw60 WHERE t < ?", (now - KEEP60,))
+            con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEP60,))
+    except sqlite3.Error as e:
+        print("rollup failed:", repr(e), flush=True)
 
 
 def sampler():
-    prev, prev_t, tick = None, None, 0
-    try:  # backfill past rows (numbers not recoverable for them); seed histogram counters from now on
-        _side_rows.extend(_access_rows(window=4000))
-    except Exception:
-        pass
+    prev, prev_t, tick = {"a": None, "b": None}, None, 0
+    for log in LOGS.values():
+        try:
+            log.rows.extend(log.access_rows(window=4000))
+        except Exception:
+            pass
     while True:
         t = time.time()
-        try:  # one bad pass must not freeze the page
-            prev, prev_t = sample(prev, prev_t, tick)
+        try:
+            prev, prev_t = sample(prev, prev_t, tick)  # prev_t MUST carry over: it is the delta baseline for live t/s
         except Exception as e:
             print("sample failed:", repr(e), flush=True)
         tick += 1
         time.sleep(max(0.0, 1.0 - (time.time() - t)))
+
+
+# ------------------------------------------------------------- history/summary APIs
+def window_range(qs):
+    r = (qs.get("range") or [""])[0]
+    now = time.time()
+    presets = {"1h": 3600, "6h": 6 * 3600, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400, "all": 365 * 86400}
+    if r in presets:
+        return now - presets[r], now
+    try:
+        t0 = float((qs.get("from") or [now - 3600])[0])
+        t1 = float((qs.get("to") or [now])[0])
+        return t0, min(t1, now)
+    except ValueError:
+        return now - 3600, now
+
+
+def api_history(qs):
+    t0, t1 = window_range(qs)
+    span = t1 - t0
+    with DB_LOCK, db() as con:
+        rows = con.execute("SELECT t,j FROM hist1 WHERE t BETWEEN ? AND ? ORDER BY t", (t0, t1)).fetchall()
+        if span > 6 * 3600:  # older than the 1s retention: rollups + the fresh 1s tail
+            rows += con.execute("SELECT t,j FROM hist60 WHERE t BETWEEN ? AND ? ORDER BY t", (t0, t1)).fetchall()
+    pts = {}
+    for t, j in rows:
+        pts[round(t, 2)] = json.loads(j)
+    pts = [pts[k] for k in sorted(pts)]
+    maxn = int((qs.get("max") or [1500])[0])
+    if len(pts) > maxn:  # uniform stride downsample
+        stride = len(pts) / maxn
+        pts = [pts[int(i * stride)] for i in range(maxn)]
+    return {"from": t0, "to": t1, "points": pts}
+
+
+def api_summary(qs):
+    t0, t1 = window_range(qs)
+    span = t1 - t0
+    table = "hist1" if span <= 6 * 3600 else "hist60"
+    out = {"from": t0, "to": t1, "engines": {}}
+    with DB_LOCK, db() as con:
+        rows = con.execute(f"SELECT j FROM {table} WHERE t BETWEEN ? AND ? ORDER BY t", (t0, t1)).fetchall()
+        reqs = con.execute("SELECT eng,j FROM reqs WHERE t BETWEEN ? AND ?", (t0, t1)).fetchall()
+    prev_c = {"m": None, "a": None, "b": None}
+    acc = {e: {"req": 0.0, "prompt": 0.0, "reused": 0.0, "gen": 0.0, "pre_s": 0.0, "dec_s": 0.0} for e in ("m", "a", "b")}
+    for (j,) in rows:
+        cs = json.loads(j).get("counters") or {}
+        for e in ("m", "a", "b"):
+            c1 = cs.get(e)
+            if not c1:
+                continue
+            if e != "m" and "reused" not in c1:
+                # vLLM points written before the exact-counter fix (prefix sums double-counted
+                # *_by_source_total / *_cached_total) — never diff them, just re-baseline
+                prev_c[e] = None
+                continue
+            c0 = prev_c[e]
+            if c0:
+                for k in acc[e]:
+                    d = c1.get(k, 0) - c0.get(k, 0)
+                    if d > 0:  # counter reset -> skip this delta
+                        acc[e][k] += d
+            prev_c[e] = c1
+    names = {"m": "main", "a": "a", "b": "b"}
+    for e, s in acc.items():
+        eng = names[e]
+        prompt, reused = s["prompt"], s.get("reused", 0)
+        out["engines"][eng] = {
+            "requests": round(s["req"]), "prompt": round(prompt), "reused": round(reused),
+            "computed": round(prompt - reused), "output": round(s["gen"]),
+            "prefill_tps": round((prompt - reused) / s["pre_s"]) if s["pre_s"] > 1 else None,
+            "decode_tps": round(s["gen"] / s["dec_s"], 1) if s["dec_s"] > 1 else None}
+    rq = {"main": [], "a": [], "b": []}
+    for eng, j in reqs:
+        try:
+            rq[eng].append(json.loads(j))
+        except (ValueError, KeyError):
+            pass
+    for eng, rows_ in rq.items():
+        s = out["engines"][eng]
+        s["req_rows"] = len(rows_)
+        for k in ("prompt", "output", "decode_tps", "dur"):
+            vals = [r.get(k) for r in rows_ if isinstance(r.get(k), (int, float))]
+            s["avg_" + k] = round(sum(vals) / len(vals), 1) if vals else None
+    return out
+
+
+def api_hw(qs):
+    t0, t1 = window_range(qs)
+    with DB_LOCK, db() as con:
+        rows = con.execute("SELECT t,j FROM hw60 WHERE t BETWEEN ? AND ? ORDER BY t", (t0, t1)).fetchall()
+    pts = [json.loads(j) for _, j in rows]
+    maxn = int((qs.get("max") or [1500])[0])
+    if len(pts) > maxn:
+        stride = len(pts) / maxn
+        pts = [pts[int(i * stride)] for i in range(maxn)]
+    return {"from": t0, "to": t1, "points": pts}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -602,22 +893,50 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.startswith("/api/state"):
+        u = urlparse(self.path)
+        qs = parse_qs(u.query)
+        if u.path == "/api/state":
             with lock:
-                m = {k: v for k, v in state.items() if k not in ("side", "requests", "side_requests")}
-                m["main"] = {k: v for k, v in state["main"].items() if k not in ("requests", "history")}
-                m["requests"] = state["requests"][-120:]
-                m["side_requests"] = state["side_requests"]
+                m = {k: v for k, v in state.items() if k != "eng"}
+                m["eng"] = {eid: {"stats": e["stats"], **({"live": e["live"]} if e.get("live") else {})}
+                            for eid, e in state["eng"].items()}
+                for eid, e in m["eng"].items():  # main live: the page needs live/engine/cache/totals, not raw metric dumps
+                    if "live" in e and isinstance(e["live"], dict):
+                        e["live"] = {k: v for k, v in e["live"].items() if k not in ("requests", "history")}
+                m["eng_names"] = ENG
                 m["history"] = list(history)
-                body = json.dumps(m).encode()
-            self.send(body, "application/json")
-        elif self.path in ("/", "/index.html"):
+                m["requests"] = state["requests"][-200:]
+            self.send(json.dumps(m).encode(), "application/json")
+        elif u.path == "/api/history":
+            self.send(json.dumps(api_history(qs)).encode(), "application/json")
+        elif u.path == "/api/summary":
+            self.send(json.dumps(api_summary(qs)).encode(), "application/json")
+        elif u.path == "/api/hw":
+            self.send(json.dumps(api_hw(qs)).encode(), "application/json")
+        elif u.path in ("/", "/index.html"):
             self.send(PAGE.read_bytes(), "text/html; charset=utf-8")
-        elif self.path in ("/hw", "/hw.html"):
+        elif u.path in ("/hw", "/hw.html"):
             self.send(Path(__file__).with_name("hw.html").read_bytes(), "text/html; charset=utf-8")
         else:
             self.send_error(404)
 
 
+def log_unit(eid):
+    return A_UNIT if eid == "a" else B_UNIT
+
+
+def info_refresher():
+    while True:
+        for unit in (A_UNIT, B_UNIT):
+            try:
+                engine_info(unit)
+            except Exception as e:
+                print("engine_info failed:", repr(e), flush=True)
+        time.sleep(300)
+
+
+db_init()
+db_backfill()
+threading.Thread(target=info_refresher, daemon=True).start()
 threading.Thread(target=sampler, daemon=True).start()
 ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

@@ -432,6 +432,32 @@ a.st-tab{text-decoration:none}
 .hw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:var(--st-s-3)}
 .hw-grid--wide{grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:var(--st-s-4)}
 .hw-sensor{margin-top:10px}
+.req-src{padding:1px 6px;border-radius:5px}
+.req-src.m-main{background:color-mix(in srgb,var(--st-accent) 20%,transparent)}
+.req-src.m-a{background:color-mix(in srgb,var(--st-info) 22%,transparent)}
+.req-src.m-b{background:color-mix(in srgb,var(--st-warn) 22%,transparent)}
+#req-body tr.m-main>td{background:color-mix(in srgb,var(--st-accent) 6%,transparent)}
+#req-body tr.m-a>td{background:color-mix(in srgb,var(--st-info) 7%,transparent)}
+#req-body tr.m-b>td{background:color-mix(in srgb,var(--st-warn) 7%,transparent)}
+.rangebar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
+.rangebar .st-btn.on{border-color:var(--st-accent);color:var(--st-accent)}
+.rangebar input{background:var(--st-surface);color:var(--st-ink);border:1px solid var(--st-line);border-radius:8px;padding:4px 8px}
+.rangebar .st-btn.c-main.on{border-color:var(--st-accent);color:var(--st-accent)}
+.rangebar .st-btn.c-a.on{border-color:var(--st-info);color:var(--st-info)}
+.rangebar .st-btn.c-b.on{border-color:var(--st-warn);color:var(--st-warn)}
+.req-head--f{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:12px}
+.req-head--f .card-title{justify-self:start}
+.req-head--f .req-filters{justify-self:center;margin:0}
+.req-head--f #req-all{justify-self:end}
+.eng-tps{display:flex;gap:32px;margin:10px 2px 8px}
+.eng-tps__m{display:flex;flex-direction:column;gap:3px}
+.eng-tps .st-metric__value{font-size:clamp(22px,2vw,var(--st-fs-stat))}
+.eng-tps__m small{color:var(--st-ink-muted);font-size:var(--st-fs-xs);letter-spacing:.03em}
+.eng-tps .tps-last{margin-top:2px;font-variant-numeric:tabular-nums}
+.row-half{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+#eng-facts .bar-row{font-size:var(--st-fs-xs);margin-bottom:4px}
+#eng-facts .facts{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:5px 8px;font-size:var(--st-fs-xs)}
+#eng-facts .facts dd{flex-wrap:wrap}
 .speed-values{display:flex;gap:var(--st-s-5);align-items:baseline}
 .speed-prefill .st-metric__value{font-size:var(--st-fs-lg)}
 .mchart{width:100%;height:112px;margin-top:2px}
@@ -498,6 +524,15 @@ a.st-tab{text-decoration:none}
   <div class="view view--monitor">
 
   <div class="monitor">
+    <div class="rangebar">
+      <span class="muted small">charts:</span>
+      <button class="st-btn st-btn--secondary on" data-hrange="live">Live 2 min</button>
+      <button class="st-btn st-btn--secondary" data-hrange="1h">1 hour</button>
+      <button class="st-btn st-btn--secondary" data-hrange="24h">1 day</button>
+      <button class="st-btn st-btn--secondary" data-hrange="7d">7 days</button>
+      <button class="st-btn st-btn--secondary" data-hrange="30d">30 days</button>
+      <span class="muted small">history stored every minute, kept 30 days</span>
+    </div>
     <section class="st-card hw-section">
       <span class="card-title">Core temperatures</span>
       <p class="muted small">The hottest sensor drives the status pill. CPU package is the one that matters: max safe 95 °C, the engine throttles itself before that.</p>
@@ -649,15 +684,63 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
 });
 setTheme(document.documentElement.dataset.theme || "light", false);
 
-// history buffers (client-side, ~2 min per sensor); one uPlot per sensor, updated every second
+// buffers per sensor key; live mode = last ~2 min, history mode = persisted minute rollups
 const buf = new Map(), CAP = 120;
-function push(k, v) {
+let HRANGE = "live", hwHist = null, hwGot = 0;
+function push(k, v, t) {
   if (v == null || isNaN(v)) return;
   let a = buf.get(k);
   if (!a) { a = {x: [], y: []}; buf.set(k, a); }
-  a.x.push(Date.now()); a.y.push(Number(v));
+  a.x.push(t != null ? t : Date.now()); a.y.push(Number(v));
   if (a.y.length > CAP) { a.x.shift(); a.y.shift(); }
 }
+// extract every chart series value out of one state/hw60 snapshot {hw, gpus, host}
+function extract(s) {
+  const hw = s.hw || [], gpus = s.gpus || [], host = s.host || {};
+  const tempsOf = (name) => { for (const c of hw) if (c.chip === name) return c.temps.filter((t) => t.c >= 5); return []; };
+  const kt = tempsOf("k10temp");
+  const nv = tempsOf("nvme");
+  const dimm = hw.filter((c) => c.chip.startsWith("spd")).flatMap((c) => c.temps).filter((t) => t.c >= 5);
+  const out = {};
+  out.cpuTctl = (kt.find((t) => t.label === "Tctl") || {}).c;
+  out.cpuGHz = host.cpu_ghz;
+  out.cpuTdie = host.cpu_temp;
+  out.nvmeW = nv.length ? Math.max(...nv.map((t) => t.c)) : null;
+  out.dimmW = dimm.length ? Math.max(...dimm.map((t) => t.c)) : null;
+  for (const g of gpus) { out["gput" + g.index] = g["temperature.gpu"]; out["blower" + g.index] = g["fan.speed"] ?? 0; }
+  for (const c of hw) {
+    for (const f of (c.fans || [])) out["rpm" + c.chip + f.id] = f.rpm;
+    for (const t of c.temps) if (t.c >= 5) out["sen" + c.chip + t.id] = t.c;
+  }
+  return out;
+}
+function fillHist(points) {
+  buf.clear();
+  for (const p of points) {
+    const vals = extract(p);
+    for (const k in vals) {
+      const v = vals[k];
+      if (v == null || isNaN(v)) continue;
+      let a = buf.get(k);
+      if (!a) { a = {x: [], y: []}; buf.set(k, a); }
+      a.x.push(p.t * 1000); a.y.push(Number(v));
+    }
+  }
+}
+async function loadHw() {
+  try {
+    const r = await fetch(`api/hw?range=${HRANGE}`);
+    if (r.ok) { hwHist = (await r.json()).points; hwGot = Date.now(); fillHist(hwHist); }
+  } catch (e) { /* keep the old window */ }
+}
+document.querySelectorAll("[data-hrange]").forEach((b) => b.addEventListener("click", async () => {
+  HRANGE = b.dataset.hrange;
+  document.querySelectorAll("[data-hrange]").forEach((x) => x.classList.toggle("on", x === b));
+  if (HRANGE === "live") buf.clear();
+  else { hwHist = null; await loadHw(); }
+  for (const k in HC) { try { HC[k].destroy(); } catch (e) { /* ignore */ } delete HC[k]; }
+  if (lastHw) render(lastHw);
+}));
 const TONE = {ok: () => SC()[0], warn: () => SC()[1], bad: () => SC()[2]};
 const lvl = (v, w, c) => v >= c ? "bad" : v >= w ? "warn" : "ok";
 function thrFor(chip, label) {
@@ -717,13 +800,8 @@ function render(s) {
   const dimm = hw.filter((c) => c.chip.startsWith("spd")).flatMap((c) => c.temps).filter((t) => t.c >= 5);
   const dimmWorst = dimm.length ? Math.max(...dimm.map((t) => t.c)) : null;
 
-  // feed the history buffers
-  push("cpuTctl", tctl); push("cpuGHz", host.cpu_ghz);
-  for (const g of gpus) push("gput" + g.index, g["temperature.gpu"]);
-  push("nvmeW", nvWorst); push("dimmW", dimmWorst); push("cpuTdie", host.cpu_temp);
-  for (const c of hw) for (const f of (c.fans || [])) push("rpm" + c.chip + f.id, f.rpm);
-  gpus.forEach((g) => push("blower" + g.index, g["fan.speed"] ?? 0));
-  for (const c of hw) for (const t of c.temps) if (t.c >= 5) push("sen" + c.chip + t.id, t.c);
+  // feed the history buffers (live mode only; history mode fills from the persisted snapshots)
+  if (HRANGE === "live") { const vals = extract(s); for (const k in vals) push(k, vals[k]); }
 
   // rebuild the DOM only when the sensor set changes; between rebuilds update values + charts
   const sig = ["cpuTctl", "cpuGHz", ...gpus.map((g) => "gput" + g.index), nvWorst != null ? "nvmeW" : "",
@@ -759,10 +837,16 @@ function render(s) {
     $("temps-strip").innerHTML = cards.join("");
 
     const fanCards = [];
+    const FAN_PHYS = { nct6799: {
+      "2": ["AIO radiator fan 1", "fancontrol · follows CPU temp"],
+      "3": ["AIO radiator fan 2", "fancontrol · follows CPU temp"],
+      "4": ["AIO pump", "BIOS-controlled · fixed max speed"],
+      "5": ["Spare header", "nothing connected"] } };
     for (const c of hw) for (const f of (c.fans || [])) {
       const key = "rpm" + c.chip + f.id, on = f.rpm > 0;
-      fanCards.push(card(key, `${chipName(c.chip)} · header ${f.id}`, "activity",
-        on ? `${fmt(f.rpm)}<small>RPM</small>` : "–", on ? "" : "nothing connected", on ? "warn" : null, 36));
+      const phys = (FAN_PHYS[c.chip] || {})[String(f.id)];
+      fanCards.push(card(key, phys ? phys[0] : `${chipName(c.chip)} · header ${f.id}`, "activity",
+        on ? `${fmt(f.rpm)}<small>RPM</small>` : "–", on ? (phys ? phys[1] : "") : "nothing connected", on ? "warn" : null, 36));
     }
     gpus.forEach((g) => fanCards.push(card("blower" + g.index, `${g.label || "GPU"} · blower`, "activity",
       `${fmt(g["fan.speed"] ?? 0)}<small>%</small>`, "", null, 36)));
@@ -838,7 +922,7 @@ function render(s) {
 async function poll() {
   try {
     const r = await fetch("api/state");
-    if (r.ok) render(await r.json());
+    if (r.ok) { if (HRANGE !== "live" && (!hwHist || Date.now() - hwGot > 60000)) await loadHw(); render(await r.json()); }
   } catch (e) {
     $("pill").dataset.state = "alert";
     $("pill-text").textContent = "Monitor not reachable";
