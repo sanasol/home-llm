@@ -194,7 +194,12 @@ $("metrics").innerHTML = METRICS.map((m) => `
     ${m.dual ? `<div class="speed-values">
       <div><span class="st-metric__value" id="mv-speed">–</span><span class="st-metric__sub" id="ms-speed">decode</span></div>
       <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">–</span><span class="st-metric__sub" id="ms-prefill">prefill</span></div>
-    </div>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
+    </div>` : m.key === "power" ? `<div class="speed-values">
+      <div><span class="st-metric__value" id="mv-power">–</span><span class="st-metric__sub" id="ms-power">system · est.</span></div>
+      <div class="speed-prefill"><span class="st-metric__value" id="mv-gpupow">–</span><span class="st-metric__sub" id="ms-gpupow">GPUs</span></div>
+    </div>
+    <span class="st-metric__sub" id="ms-energy1"></span>
+    <span class="st-metric__sub" id="ms-energy2"></span>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
     <span class="st-metric__sub" id="ms-${m.key}"></span>`}
     <div class="mchart" id="mc-${m.key}"></div>
   </div></div>`).join("");
@@ -428,10 +433,29 @@ function render(s) {
   metricChart("temp", xs, gLabel.map((l, i) =>
     ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_temp_by")[i], unit: " °C", dec: 0})), {autoMin: true, max: 95, yu: "°"});
 
-  setMetric("power", pow ? fmt(pow) : null, "W", powL ? `of ${fmt(powL)} W total limit` : "");
-  metricChart("power", xs, gLabel.map((l, i) =>
-    ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_power_by")[i], unit: ` W (limit ${fmt((gpus[i] || {})["power.limit"] || 0)} W)`, dec: 0})),
-    {max: Math.max(1, ...gpus.map((g) => g["power.limit"] || 0)), yu: "W"});
+  // power: system (wall, ESTIMATE from Prometheus rig:* rules) big, GPUs (NVML, exact) small; kWh/RSD lines
+  {
+    const en = s.energy || {};
+    const ok = en.ok && Date.now() / 1000 - (en.t || 0) < 90;
+    const sysNow = ok && en.psu_k && pow ? (pow + (en.cpu_w || 0) + (en.other_w || 0)) * en.psu_k : (ok ? en.wall_w : null);
+    setMetric("power", sysNow != null ? fmt(sysNow) : null, "W", ok ? `system · est. (CPU ${fmt(en.cpu_w)} W)` : "system · no data");
+    const gp = $("mv-gpupow");
+    if (gp) gp.innerHTML = pow ? `${esc(fmt(pow))}<small>W</small>` : "–";
+    const gs = $("ms-gpupow");
+    if (gs) gs.textContent = powL ? `GPUs of ${fmt(powL)} W limit` : "GPUs";
+    const tariff = en.price == null ? "" : en.price < 20 ? " · night tariff" : " · day tariff";
+    $("ms-energy1").textContent = ok
+      ? `≈ ${fmt(sysNow != null && en.price != null ? sysNow / 1000 * en.price : en.rsd_h, 1)} RSD/h${tariff} · today ${fmt(en.today_kwh, 1)} kWh ≈ ${fmt(en.today_rsd)} RSD` : "";
+    $("ms-energy2").textContent = ok
+      ? `month ${fmt(en.month_kwh, 0)} kWh ≈ ${fmt(en.month_rsd)} RSD · forecast ≈ ${fmt(en.month_proj_rsd, 0)} RSD/mo` : "";
+    const sysv = hcol("sys_power");
+    const sysMax = Math.max(0, ...sysv.filter((x) => x != null));
+    metricChart("power", xs, [
+      {label: "system (est.)", c: () => SC()[3], dash: true, w: 1.6, values: fill(sysv), unit: " W (wall, estimate)", dec: 0},
+      ...gLabel.map((l, i) =>
+        ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_power_by")[i], unit: ` W (limit ${fmt((gpus[i] || {})["power.limit"] || 0)} W)`, dec: 0}))],
+      {max: Math.max(1, sysMax * 1.08, ...gpus.map((g) => g["power.limit"] || 0)), yu: "W"});
+  }
 
   // PCIe: real NVML Rx/Tx throughput per second (dmon), one pair of lines per GPU
   {
@@ -636,7 +660,7 @@ MON_BODY = """
       </div>
       <div class="st-card state-card">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B A · HyperQwen :18020 · <span class="muted">3090 #1 · speed · 150K</span></span>
+          <span class="card-title">Qwen 27B A · HyperQwen :18020 · <span class="muted">3090 #1 · vLLM 0.32 · 150K</span></span>
           <span class="badges" id="a-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
@@ -652,7 +676,7 @@ MON_BODY = """
       </div>
       <div class="st-card state-card">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B B · HyperQwen :18021 · <span class="muted">3090 #2 · 262K</span></span>
+          <span class="card-title">Qwen 27B B · HyperQwen :18021 · <span class="muted">3090 #2 · 150K · clone of A</span></span>
           <span class="badges" id="b-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
@@ -845,6 +869,14 @@ const CHIP = {k10temp: "CPU", nvme: "NVMe SSD", nct6799: "Motherboard · NCT6799
               prom21_xhci: "USB 3.2 controller", "r8169_0_900:00": "Ethernet · Realtek", mt7925_phy0: "Wi-Fi",
               amdgpu: "Integrated GPU"};
 function chipName(c) { for (const k in CHIP) if (c === k || c.startsWith(k)) return CHIP[k]; return c; }
+// Board fan headers -> physical fans (map verified by eye 29.10, see docs/07).
+const FAN_PHYS = { nct6799: {
+  "2": ["AIO radiator fans", "CPU_FAN1 · top exhaust · fancontrol (CPU temp)"],
+  "3": ["Rear exhaust 140", "CPU_FAN2 · fancontrol (CPU temp)"],
+  "4": ["AIO pump", "AIO_PUMP · BIOS · fixed max speed"],
+  "5": ["Front intake 3×140", "CHA_FAN · fancontrol · kept above rear"],
+  "1": ["Spare channel", "no tach · bottom 2×P12 on CHA_FAN4 = BIOS only"] } };
+function fanName(chip, id) { const p = (FAN_PHYS[chip] || {})[String(id)]; return p ? p[0] : `${chipName(chip)} · header ${id}`; }
 const SENSOR = {"Tctl": "CPU package", "Tccd1": "CPU core complex 1", "Tccd2": "CPU core complex 2",
   "Composite": "Drive composite", "Sensor 1": "Flash chips", "Sensor 2": "Controller",
   "SYSTIN": "System (board)", "CPUTIN": "CPU socket probe", "TSI0_TEMP": "VRM zone (TSI0)", "SMBUSMASTER 0": "SMBus controller",
@@ -928,16 +960,11 @@ function render(s) {
     $("temps-strip").innerHTML = cards.join("");
 
     const fanCards = [];
-    const FAN_PHYS = { nct6799: {
-      "2": ["AIO radiator fan 1", "fancontrol · follows CPU temp"],
-      "3": ["AIO radiator fan 2", "fancontrol · follows CPU temp"],
-      "4": ["AIO pump", "BIOS-controlled · fixed max speed"],
-      "5": ["Spare header", "nothing connected"] } };
     for (const c of hw) for (const f of (c.fans || [])) {
       const key = "rpm" + c.chip + f.id, on = f.rpm > 0;
       const phys = (FAN_PHYS[c.chip] || {})[String(f.id)];
       fanCards.push(card(key, phys ? phys[0] : `${chipName(c.chip)} · header ${f.id}`, "activity",
-        on ? `${fmt(f.rpm)}<small>RPM</small>` : "–", on ? (phys ? phys[1] : "") : "nothing connected", on ? "warn" : null, 36));
+        on ? `${fmt(f.rpm)}<small>RPM</small>` : "–", on ? (phys ? phys[1] : "") : (phys ? phys[1] : "nothing connected"), on ? "warn" : null, 36));
     }
     gpus.forEach((g) => fanCards.push(card("blower" + g.index, `${g.label || "GPU"} · blower`, "activity",
       `${fmt(g["fan.speed"] ?? 0)}<small>%</small>`, "", null, 36)));
@@ -992,7 +1019,7 @@ function render(s) {
   if (nvWorst != null) chartFor("nvmeW", () => TONE[lvl(nvWorst, 50, 70)](), "NVMe SSD");
   if (dimmWorst != null) chartFor("dimmW", () => TONE[lvl(dimmWorst, 60, 80)](), "Memory (SPD)");
   if (host.cpu_temp != null) chartFor("cpuTdie", () => TONE[lvl(host.cpu_temp, 70, 85)](), "CPU (Tdie)");
-  for (const c of hw) for (const f of (c.fans || [])) chartFor("rpm" + c.chip + f.id, () => SC()[1], `${chipName(c.chip)} · header ${f.id}`, 36);
+  for (const c of hw) for (const f of (c.fans || [])) chartFor("rpm" + c.chip + f.id, () => SC()[1], fanName(c.chip, f.id), 36);
   gpus.forEach((g) => chartFor("blower" + g.index, () => SC()[1], `${g.label || "GPU"} · blower`, 36));
   for (const c of hw) for (const t of c.temps) if (t.c >= 5) {
     const [w, cr] = thrFor(c.chip, t.label);

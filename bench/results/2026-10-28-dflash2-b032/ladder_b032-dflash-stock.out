@@ -1,0 +1,7 @@
+LADDER b032-dflash-stock pool=140080 tok, ctx=[8000, 40000, 90000], prompts=4, reps=1, out=300, K=7.0
+  ctx=8000 rep=1 token lens: [7951, 7952, 7954, 7953]
+LADDER b032-dflash-stock ctx=8000 #1 out=1200 dur=29.91s win=40.12 tok/s decode=104.4 tok/s | drafts=6104 acc=2402 tok/step=3.75 ms/step=34.3
+  ctx=40000 rep=1 token lens: [39793, 39791, 39792, 39791]
+LADDER b032-dflash-stock ctx=40000 #1 out=1200 dur=108.75s win=11.03 tok/s decode=98.1 tok/s | drafts=2317 acc=877 tok/step=3.65 ms/step=328.5
+  ctx=90000 rep=1 token lens: [89539, 89539, 89538, 89540]
+LADDER b032-dflash-stock ctx=90000 #1 out=1200 dur=279.94s win=4.29 tok/s decode=76.6 tok/s | drafts=2674 acc=854 tok/step=3.24 ms/step=732.8

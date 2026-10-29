@@ -1,0 +1,29 @@
+# /etc/systemd/system/hyperqwen-b.service
+[Unit]
+Description=HyperQwen side slot B (KVarN huge, 262K context) on internal 3090 :18021
+After=network-online.target rig-gpu-power.service hyperqwen-a.service
+Wants=rig-gpu-power.service
+
+[Service]
+TimeoutStartSec=900
+Type=simple
+ExecStartPre=/bin/bash -c "for i in $(seq 1 120); do curl -sf http://localhost:18020/health >/dev/null && exit 0; sleep 10; done; exit 0"
+User=al
+WorkingDirectory=~/HyperQwen
+Environment=PORT=18021
+Environment=CTX=huge
+Environment=MAX_LEN=262144
+Environment=SPEC=mtp
+Environment=PTH_FA=0
+Environment=MODEL=~/HyperQwen/models/Qwen3.8-27B-W4A16-AutoRound-fast
+Environment=CUDA_VISIBLE_DEVICES=GPU-2e674bbf-af1e-4ad3-17f6-abc8e47b4f36
+Environment=CUDA_HOME=~/HyperQwen/venv/lib/python3.14/site-packages/nvidia/cu13
+Environment=PATH=~/HyperQwen/venv/lib/python3.14/site-packages/nvidia/cu13/bin:~/HyperQwen/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash ~/HyperQwen/single-user/start_qwen.sh
+ExecStartPost=/bin/bash -c "for i in $(seq 1 60); do curl -sf http://localhost:18021/health >/dev/null && break; sleep 5; done; cd ~/HyperQwen && PORT=18021 timeout 300 bash bench/warmup.sh || true"
+Restart=on-failure
+RestartSec=15
+MemoryMax=40G
+
+[Install]
+WantedBy=multi-user.target

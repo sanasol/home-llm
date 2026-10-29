@@ -1,6 +1,10 @@
 global:
   scrape_interval: 15s
   scrape_timeout: 12s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   - job_name: node
@@ -12,6 +16,7 @@ scrape_configs:
   - job_name: vllm
     metrics_path: /metrics
     bearer_token_file: /etc/prometheus/tokens/side.key
+    # A back on vLLM 0.32 since 29.10 13:38 EDT (OpenJet trial rolled back, docs/16).
     static_configs:
       - targets: ["localhost:18020"]
         labels: {engine: "qwen27b-a"}
@@ -29,3 +34,10 @@ scrape_configs:
 
   - job_name: litellm
     static_configs: [{targets: ["localhost:9093"]}]
+
+  # rig_llm_exporter (rig/scripts/rig_llm_exporter.py): uniform tok/s, KV, cache counters
+  # for ALL engines (Strata JSON, vLLM A/B /metrics) + GPU/fan name joins.
+  - job_name: rig_llm
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    static_configs: [{targets: ["localhost:9097"]}]

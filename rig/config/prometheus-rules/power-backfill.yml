@@ -1,0 +1,24 @@
+# GENERATED inline copy of power.yml for `promtool tsdb create-blocks-from rules` (backfill cannot chain
+# recording rules). CPU uses the busy-based fallback (no RAPL before 2026-10-30). One-off, used 2026-10-30.
+groups:
+- name: rig_power_backfill
+  interval: 15s
+  rules:
+  - record: rig:power_gpu_watts
+    expr: sum(nvidia_smi_power_draw_watts{job="gpu"})
+  - record: rig:power_cpu_watts
+    expr: (60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))
+  - record: rig:power_other_watts
+    expr: 55 + 0.10 * ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m])))))
+  - record: rig:power_system_dc_watts
+    expr: (sum(nvidia_smi_power_draw_watts{job="gpu"})) + ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))) + (55 + 0.10 * ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))))
+  - record: rig:power_system_wall_watts
+    expr: ((sum(nvidia_smi_power_draw_watts{job="gpu"})) + ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))) + (55 + 0.10 * ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))))) / 0.89
+  - record: rig:belgrade_dst
+    expr: "(month(vector(time())) > bool 3) * (month(vector(time())) < bool 10)\n+ (month(vector(time())) == bool 3)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) >= bool 25)\n+ (month(vector(time())) == bool 10)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) < bool 25)"
+  - record: rig:local_hour
+    expr: "(hour(vector(time())) + 1 + ((month(vector(time())) > bool 3) * (month(vector(time())) < bool 10)\n+ (month(vector(time())) == bool 3)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) >= bool 25)\n+ (month(vector(time())) == bool 10)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) < bool 25))) % 24"
+  - record: rig:electricity_price_rsd_per_kwh
+    expr: "17.2 + (((hour(vector(time())) + 1 + ((month(vector(time())) > bool 3) * (month(vector(time())) < bool 10)\n+ (month(vector(time())) == bool 3)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) >= bool 25)\n+ (month(vector(time())) == bool 10)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) < bool 25))) % 24) >= bool 8) * (25.6 - 17.2)"
+  - record: rig:electricity_cost_rsd_per_hour
+    expr: "(((sum(nvidia_smi_power_draw_watts{job=\"gpu\"})) + ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\"}[1m]))))) + (55 + 0.10 * ((60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job=\"node\",mode=\"idle\"}[1m]))))))) / 0.89) / 1000 * (17.2 + (((hour(vector(time())) + 1 + ((month(vector(time())) > bool 3) * (month(vector(time())) < bool 10)\n+ (month(vector(time())) == bool 3)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) >= bool 25)\n+ (month(vector(time())) == bool 10)\n  * ((day_of_month(vector(time())) - day_of_week(vector(time()))) < bool 25))) % 24) >= bool 8) * (25.6 - 17.2))"

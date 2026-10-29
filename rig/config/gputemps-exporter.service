@@ -1,0 +1,14 @@
+[Unit]
+Description=GPU core/hotspot/VRAM temps (gputemps MMIO) -> node_exporter textfile
+After=nvidia-persistenced.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/rig/bin/gputemps_exporter.py
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

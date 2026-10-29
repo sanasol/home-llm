@@ -1,0 +1,10 @@
+# Live /proc/<pid>/cmdline of both side vLLM processes, captured 2026-10-28 (each line truncated at ~700 chars at capture time).
+# No --api-key flag in argv; the API key comes from /opt/rig/side.env (VLLM_API_KEY).
+
+## slot A (:18020)
+~/HyperQwen/venv/bin/python3 ~/HyperQwen/venv/bin/vllm serve ~/HyperQwen/models/Qwen3.8-27B-W4A16-AutoRound-fast --served-model-name qwen3.8-27b --host 0.0.0.0 --port 18020 --gpu-memory-utilization 0.93 --max-model-len 150000 --max-num-seqs 8 --api-server-count 1 --language-model-only --kv-cache-dtype fp8 --mamba-ssm-cache-dtype float16 --async-scheduling --max-num-batched-tokens 2048 --speculative-config {"method":"mtp","num_speculative_tokens":3,"draft_sample_method":"probabilistic"} --compilation-config {"max_cudagraph_capture_size":32,"custom_ops":["+rms_norm","+silu_and_mul"]} --reasoning-parser qwen3 --enable-prompt-tokens-details --enable-auto-tool-choice --tool-c... [truncated]
+
+## slot B (:18021) — pre-clone, KVarN
+~/HyperQwen/venv/bin/python3 ~/HyperQwen/venv/bin/vllm serve ~/HyperQwen/models/Qwen3.8-27B-W4A16-AutoRound-fast --served-model-name qwen3.8-27b --host 0.0.0.0 --port 18021 --gpu-memory-utilization 0.93 --max-model-len 262144 --max-num-seqs 8 --api-server-count 1 --language-model-only --kv-cache-dtype kvarn_k4v2_g128 --block-size 128 --mamba-ssm-cache-dtype float16 --async-scheduling --max-num-batched-tokens 2048 --speculative-config {"method":"mtp","num_speculative_tokens":3,"draft_sample_method":"probabilistic"} --compilation-config {"max_cudagraph_capture_size":32,"custom_ops":["+rms_norm","+silu_and_mul"],"cudagraph_mode":"PIECEWISE"} --reasoning-parser qwen3 --enabl... [truncated]
+
+Diff B vs A (what the clone removes/changes): kv-cache-dtype kvarn_k4v2_g128 -> fp8; --block-size 128 -> (default 16); cudagraph_mode PIECEWISE -> (default, absent); --max-model-len 262144 -> 150000; port 18021 kept; GPU stays #2.

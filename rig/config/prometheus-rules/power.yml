@@ -1,0 +1,47 @@
+# Rig electricity estimate (docs/20 §5, docs/14). No wall meter yet: system power is ESTIMATED
+#   GPUs (NVML board power, exact per card)
+# + CPU package (RAPL via node-exporter; fallback from CPU busy when RAPL is absent, e.g. backfill before 30.10)
+# + CPU VRM losses (~10% of CPU) + rest of the box (RAM, 2 chipsets, NVMe, fans, pump, dock, NIC) ~55 W
+# / PSU efficiency (~0.89, 80+ Gold at 20-85% load).
+# Accuracy +-10-15%. Replace rig:power_system_wall_watts with a smart-plug reading when one exists.
+#
+# Tariff: EPS commercial supply, two-rate, no colour zones (docs/20 §5): VT 25.6 RSD/kWh, NT 17.2 RSD/kWh
+# (energy + network + surcharges, x excise 7.5%, x VAT 20%). NT = 00-08 local (Europe/Belgrade).
+# Prometheus has no time zones: rig:belgrade_dst implements the EU rule (summer time from the last Sunday
+# of March to the last Sunday of October); only the 1-2 h around the switch itself can be off by one hour.
+# Fixed monthly charges (capacity 17.25 kW ~1050 RSD + RTS 349 RSD) do not depend on the server and are excluded.
+#
+# Totals over any window R (group interval MUST stay 15s - the factor below depends on it; gaps count as 0):
+#   kWh  = sum_over_time(rig:power_system_wall_watts[R]) * 15 / 3600 / 1000
+#   RSD  = sum_over_time(rig:electricity_cost_rsd_per_hour[R]) * 15 / 3600
+# History before 2026-10-29 23:17 UTC was backfilled with power-backfill.yml (CPU from busy-fallback).
+groups:
+  - name: rig_power
+    interval: 15s
+    rules:
+      - record: rig:power_gpu_watts
+        expr: sum(nvidia_smi_power_draw_watts{job="gpu"})
+      - record: rig:power_cpu_watts
+        expr: |
+          sum(rate(node_rapl_package_joules_total{job="node"}[1m]))
+          or
+          (60 + 150 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[1m]))))
+      - record: rig:power_other_watts
+        expr: 55 + 0.10 * rig:power_cpu_watts
+      - record: rig:power_system_dc_watts
+        expr: rig:power_gpu_watts + rig:power_cpu_watts + rig:power_other_watts
+      - record: rig:power_system_wall_watts
+        expr: rig:power_system_dc_watts / 0.89
+      - record: rig:belgrade_dst
+        expr: |
+          (month(vector(time())) > bool 3) * (month(vector(time())) < bool 10)
+          + (month(vector(time())) == bool 3)
+            * ((day_of_month(vector(time())) - day_of_week(vector(time()))) >= bool 25)
+          + (month(vector(time())) == bool 10)
+            * ((day_of_month(vector(time())) - day_of_week(vector(time()))) < bool 25)
+      - record: rig:local_hour
+        expr: (hour(vector(time())) + 1 + rig:belgrade_dst) % 24
+      - record: rig:electricity_price_rsd_per_kwh
+        expr: 17.2 + (rig:local_hour >= bool 8) * (25.6 - 17.2)
+      - record: rig:electricity_cost_rsd_per_hour
+        expr: rig:power_system_wall_watts / 1000 * rig:electricity_price_rsd_per_kwh

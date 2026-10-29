@@ -1,0 +1,33 @@
+# /etc/systemd/system/hyperqwen-a.service
+# Slot A (fast sprint lane) on vLLM 0.32 worktree, FP8 KV, MTP, 150K, port 18020,
+# external 3090 (GPU-9c7268f4). 2026-10-29 rollout from A-0.31 (main tree
+# ~/HyperQwen). B (18021) shares the same worktree/venv since 2026-10-28.
+# Rollback: /etc/systemd/system/hyperqwen-a.service.bak-0.31-20261029
+#   or /opt/rig/snapshots/2026-10-29-hyperqwen-a/hyperqwen-a.service.pre-0.32
+[Unit]
+Description=HyperQwen side slot A (fast, fp8 KV, MTP, 150K; vLLM 0.32) on external 3090 :18020
+After=network-online.target rig-gpu-power.service llm-main.service
+Wants=rig-gpu-power.service
+
+[Service]
+TimeoutStartSec=900
+Type=simple
+ExecStartPre=/bin/bash -c "for i in $(seq 1 90); do curl -sf http://localhost:8001/health >/dev/null && exit 0; sleep 10; done; exit 0"
+User=al
+WorkingDirectory=~/HyperQwen-0.32
+Environment=PORT=18020
+Environment=CTX=long
+Environment=SPEC=mtp
+Environment=PTH_FA=0
+Environment=MODEL=~/HyperQwen-0.32/models/Qwen3.8-27B-W4A16-AutoRound-fast
+Environment=CUDA_VISIBLE_DEVICES=GPU-9c7268f4-61e4-a63f-7a6f-e33d57743219
+Environment=CUDA_HOME=~/HyperQwen-0.32/venv/lib/python3.14/site-packages/nvidia/cu13
+Environment=PATH=~/HyperQwen-0.32/venv/lib/python3.14/site-packages/nvidia/cu13/bin:~/HyperQwen-0.32/venv/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash ~/HyperQwen-0.32/single-user/start_qwen.sh
+ExecStartPost=/bin/bash -c "for i in $(seq 1 60); do curl -sf http://localhost:18020/health >/dev/null && break; sleep 5; done; cd ~/HyperQwen-0.32 && PORT=18020 timeout 300 bash bench/warmup.sh || true"
+Restart=on-failure
+RestartSec=15
+MemoryMax=40G
+
+[Install]
+WantedBy=multi-user.target

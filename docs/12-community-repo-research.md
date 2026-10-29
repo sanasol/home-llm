@@ -33,7 +33,7 @@ Repos cloned at: `~/.hermes/cache/scratch/repo-research/`.
 - **Requirements:** Linux x86_64, driver R580+, Python 3.13, uv, gcc13, ~1 GiB /dev/shm; 2.4 GiB pinned host RAM (embeddings).
 - **Maintenance:** very active — 3.0.0 released 2026-10-20/21, commits to 2026-10-22.
 
-**Verdict: ADOPT-CANDIDATE** for the *single-262K-session* profile on one of our 3090s (same card, same model family, same vLLM generation as HyperQwen): 73–124 t/s vs our B's 22–87, plus working prefix cache (98–99.8% follow-on) which our vLLM 3090s lack. Cost: it's a 0.32.0 **fork** — swapping an engine, not patching HyperQwen; and its 1× 3090 pool holds **one** 262K session (our KVarN B holds 2–3). TP2 on our no-P2P host = their untested profile, and their own numbers say 2×TP1 beats TP2 on no-P2P — so TP2 is out unless we adopt the open-kernel-module driver (aikitoria) to enable P2P.
+**Verdict: ADOPT-CANDIDATE** for the *single-262K-session* profile on one of our 3090s (same card, same model family, same vLLM generation as HyperQwen): 73–124 t/s vs our B's 22–87, plus working prefix cache (98–99.8% follow-on) — which our vLLM 3090 stack lacked in the 27.10 KVarN profile (fp8 A/B have working prefix cache since the clone). Cost: it's a 0.32.0 **fork** — swapping an engine, not patching HyperQwen; and its 1× 3090 pool holds **one** 262K session (our KVarN B holds 2–3). TP2 on our no-P2P host = their untested profile, and their own numbers say 2×TP1 beats TP2 on no-P2P — so TP2 is out unless we adopt the open-kernel-module driver (aikitoria) to enable P2P.
 
 ## 3. r0b0tlab/qwen38-exl3-dflash2 — **TEST-WORTHY** (DFlash2 reference; engine not portable)
 
@@ -108,5 +108,45 @@ Acceptance: 2438/5551 draft tokens (~3.07 accepted per draft, k=7).
 Verdict: **not adopted** — A reverted to production MTP/150K arm. DFlash2 wins only at long context
 (+11% @90K) and loses mid-context; it also cuts the context ceiling 131-150K -> 96K because the drafter
 eats the KV budget. Keep as an optional profile (drop-in recipe above) for long-ctx-only sprints.
-Next per plan: Merlin 1x3090 profile test on B.
+(Merlin follow-up is off the B lane since 2026-10-28: B became a clone of A — single GPU,
+TP2 not applicable; see Experiment 2 below.)
+
+## Experiment 2 executed 2026-10-28: DFlash2 (RU + stock) on B at vLLM 0.32 (rig 3090 #2)
+
+B is the clone-of-A arm on the 0.32 worktree (FP8 KV, MTP, 150K, KV 204,336; see
+rig/snapshots/2026-10-28-hyperqwen-b/). The user's question: does the RU-tuned drafter
+(`lapalaba/Qwen3.8-27B-DFlash2-ru`, 3.6 GB) beat MTP? A stock-drafter control arm was run
+on the same engine the same day to separate "0.32 dflash broken" from "RU bad for this
+workload". Protocol: `bench/ru_ctx_ladder.py` (0.32 worktree) — 4 production C1 coding
+prompts padded to 8K/40K/90K with a run-unique non-repeating filler pool (prefix cache
+defeated), 300 out, greedy, one at a time; dflash arms at KV 4.1 GB → 96,680, MAX_LEN=96000.
+Raw data: `bench/results/2026-10-28-dflash2-b032/`.
+
+Decode t/s (Mean TPOT-based, prefill excluded):
+
+| ctx | MTP K=3 | RU dflash K=7 | stock dflash K=7 | RU vs MTP | stock vs MTP |
+|---|---|---|---|---|---|
+| 8K  | 103.5 (2.58 tok/step) | 49.5 (2.76)  | 104.4 (3.75) | **−52%** | +0.9% |
+| 40K | 99.2 (2.68)          | 21.6 (2.97)   | 98.1 (3.65)  | **−78%** | −1.1% |
+| 90K | 53.0 (2.82)          | 64.9 (2.72)   | **76.6 (3.24)** | +22%   | **+44.5%** |
+
+Verdict:
+- **RU drafter rejected** — it is the wrong specialization for B's workload (par27
+  subagent lane = mostly coding/English). Per-position acceptance on the coding mix
+  collapsed to ~16% avg (vs 67% on its RU warmup text) and it loses 2–4.6× at 8K/40K;
+  +22% at 90K does not clear the "win in every window" rule.
+- **Stock drafter on 0.32 works** (healthy path, same wall speed as MTP at 8K/40K,
+  +44.5% at 90K) but misses the strict adoption rule at 40K (−1.1%, within noise) →
+  B stays on MTP as default. The stock unit is kept in the snapshot dir for manual
+  long-ctx-only sprints (remember: KV pool halves 204,336 → 96,680, so it is a
+  concurrency-for-latency trade, not free).
+- 0.32 integration notes: (a) `no KV cache group could be identified as the draft
+  model's` WARNING on both dflash arms (new vs 0.31; stock still performs — candidate
+  upstream question for syv-ai PR #387, possibly why the drafter KV shows as padding
+  layers); (b) spec-decode metric names changed in 0.32 (`..._num_drafts_total` = steps,
+  `..._num_draft_tokens_total`, `..._num_accepted_tokens_total`, per-position breakdown)
+  vs 0.31's `..._num_draft_total` / `..._num_accepted_total` — anything parsing B's
+  /metrics must handle both while A is still on 0.31; (c) deterministic 1024-token probe:
+  B-0.32 stops at 700 vs A-0.31 at 405 (identical reasoning content) — different
+  MTP/sampling internals between 0.31 and 0.32, not a correctness issue.
 

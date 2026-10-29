@@ -544,7 +544,7 @@ a.st-tab{text-decoration:none}
       </div>
       <div class="st-card state-card">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B A · HyperQwen :18020 · <span class="muted">3090 #1 · speed · 150K</span></span>
+          <span class="card-title">Qwen 27B A · HyperQwen :18020 · <span class="muted">3090 #1 · vLLM 0.32 · 150K</span></span>
           <span class="badges" id="a-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
@@ -560,7 +560,7 @@ a.st-tab{text-decoration:none}
       </div>
       <div class="st-card state-card">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B B · HyperQwen :18021 · <span class="muted">3090 #2 · 262K</span></span>
+          <span class="card-title">Qwen 27B B · HyperQwen :18021 · <span class="muted">3090 #2 · 150K · clone of A</span></span>
           <span class="badges" id="b-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
@@ -829,7 +829,12 @@ $("metrics").innerHTML = METRICS.map((m) => `
     ${m.dual ? `<div class="speed-values">
       <div><span class="st-metric__value" id="mv-speed">–</span><span class="st-metric__sub" id="ms-speed">decode</span></div>
       <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">–</span><span class="st-metric__sub" id="ms-prefill">prefill</span></div>
-    </div>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
+    </div>` : m.key === "power" ? `<div class="speed-values">
+      <div><span class="st-metric__value" id="mv-power">–</span><span class="st-metric__sub" id="ms-power">system · est.</span></div>
+      <div class="speed-prefill"><span class="st-metric__value" id="mv-gpupow">–</span><span class="st-metric__sub" id="ms-gpupow">GPUs</span></div>
+    </div>
+    <span class="st-metric__sub" id="ms-energy1"></span>
+    <span class="st-metric__sub" id="ms-energy2"></span>` : `<span class="st-metric__value" id="mv-${m.key}">–</span>
     <span class="st-metric__sub" id="ms-${m.key}"></span>`}
     <div class="mchart" id="mc-${m.key}"></div>
   </div></div>`).join("");
@@ -1063,10 +1068,29 @@ function render(s) {
   metricChart("temp", xs, gLabel.map((l, i) =>
     ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_temp_by")[i], unit: " °C", dec: 0})), {autoMin: true, max: 95, yu: "°"});
 
-  setMetric("power", pow ? fmt(pow) : null, "W", powL ? `of ${fmt(powL)} W total limit` : "");
-  metricChart("power", xs, gLabel.map((l, i) =>
-    ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_power_by")[i], unit: ` W (limit ${fmt((gpus[i] || {})["power.limit"] || 0)} W)`, dec: 0})),
-    {max: Math.max(1, ...gpus.map((g) => g["power.limit"] || 0)), yu: "W"});
+  // power: system (wall, ESTIMATE from Prometheus rig:* rules) big, GPUs (NVML, exact) small; kWh/RSD lines
+  {
+    const en = s.energy || {};
+    const ok = en.ok && Date.now() / 1000 - (en.t || 0) < 90;
+    const sysNow = ok && en.psu_k && pow ? (pow + (en.cpu_w || 0) + (en.other_w || 0)) * en.psu_k : (ok ? en.wall_w : null);
+    setMetric("power", sysNow != null ? fmt(sysNow) : null, "W", ok ? `system · est. (CPU ${fmt(en.cpu_w)} W)` : "system · no data");
+    const gp = $("mv-gpupow");
+    if (gp) gp.innerHTML = pow ? `${esc(fmt(pow))}<small>W</small>` : "–";
+    const gs = $("ms-gpupow");
+    if (gs) gs.textContent = powL ? `GPUs of ${fmt(powL)} W limit` : "GPUs";
+    const tariff = en.price == null ? "" : en.price < 20 ? " · night tariff" : " · day tariff";
+    $("ms-energy1").textContent = ok
+      ? `≈ ${fmt(sysNow != null && en.price != null ? sysNow / 1000 * en.price : en.rsd_h, 1)} RSD/h${tariff} · today ${fmt(en.today_kwh, 1)} kWh ≈ ${fmt(en.today_rsd)} RSD` : "";
+    $("ms-energy2").textContent = ok
+      ? `month ${fmt(en.month_kwh, 0)} kWh ≈ ${fmt(en.month_rsd)} RSD · forecast ≈ ${fmt(en.month_proj_rsd, 0)} RSD/mo` : "";
+    const sysv = hcol("sys_power");
+    const sysMax = Math.max(0, ...sysv.filter((x) => x != null));
+    metricChart("power", xs, [
+      {label: "system (est.)", c: () => SC()[3], dash: true, w: 1.6, values: fill(sysv), unit: " W (wall, estimate)", dec: 0},
+      ...gLabel.map((l, i) =>
+        ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_power_by")[i], unit: ` W (limit ${fmt((gpus[i] || {})["power.limit"] || 0)} W)`, dec: 0}))],
+      {max: Math.max(1, sysMax * 1.08, ...gpus.map((g) => g["power.limit"] || 0)), yu: "W"});
+  }
 
   // PCIe: real NVML Rx/Tx throughput per second (dmon), one pair of lines per GPU
   {

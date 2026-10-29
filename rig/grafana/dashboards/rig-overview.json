@@ -1,33 +1,430 @@
 {
- "title": "Rig overview",
  "uid": "rig-overview",
- "timezone": "browser",
+ "title": "Rig overview",
  "tags": [
   "rig"
  ],
- "refresh": "30s",
+ "timezone": "browser",
+ "refresh": "10s",
  "time": {
-  "from": "now-6h",
+  "from": "now-3h",
   "to": "now"
  },
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": true,
+ "links": [
+  {
+   "title": "LiteLLM gateway",
+   "type": "link",
+   "url": "/d/rig-litellm",
+   "icon": "dashboard"
+  },
+  {
+   "title": "Node full",
+   "type": "dashboards",
+   "tags": [
+    "linux"
+   ]
+  }
+ ],
  "panels": [
   {
-   "title": "LLM decode t/s (vLLM engines)",
-   "type": "timeseries",
+   "type": "row",
+   "title": "LLM speed \u2014 every model / GPU (rig_llm_exporter :9097)",
+   "collapsed": false,
+   "id": 1,
    "gridPos": {
-    "h": 8,
-    "w": 6,
+    "h": 1,
+    "w": 24,
     "x": 0,
     "y": 0
    },
+   "panels": []
+  },
+  {
+   "id": 2,
+   "title": "Decode t/s \u00b7 RTX 5090",
+   "type": "stat",
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 1
+   },
    "targets": [
     {
-     "expr": "sum by (engine) (rate(vllm:generation_tokens_total[1m]))",
-     "legendFormat": "{{engine}}"
+     "refId": "A",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"0\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle."
+  },
+  {
+   "id": 3,
+   "title": "Decode t/s \u00b7 RTX 3090 #1 (A)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"2\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle."
+  },
+  {
+   "id": 4,
+   "title": "Decode t/s \u00b7 RTX 3090 #2 (B)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"1\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle."
+  },
+  {
+   "id": 5,
+   "title": "Prefill t/s \u00b7 RTX 5090",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"0\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
+  },
+  {
+   "id": 6,
+   "title": "Prefill t/s \u00b7 RTX 3090 #1 (A)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"2\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
+  },
+  {
+   "id": 7,
+   "title": "Prefill t/s \u00b7 RTX 3090 #2 (B)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 20,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"1\"}",
+     "legendFormat": "{{model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
+  },
+  {
+   "id": 8,
+   "title": "Decode t/s by model \u00b7 GPU (live)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_decode_tokens_per_second",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -35,63 +432,367 @@
      "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
-   }
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Instantaneous decode speed while generating. Gaps to 0 = idle."
   },
   {
+   "id": 9,
+   "title": "Prefill t/s by model \u00b7 GPU (live)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 6
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_prefill_tokens_per_second",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Uncached prompt processing speed. vLLM counts prefill in scheduler chunks, so B is spiky."
+  },
+  {
+   "id": 10,
+   "title": "Effective decode t/s per request (5m)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 14
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(rig_llm_generation_tokens_total[5m]) / rate(rig_llm_decode_seconds_total[5m]) > 0",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "generated tokens / decode seconds over 5 min = average per-stream speed."
+  },
+  {
+   "id": 11,
+   "title": "Generated tokens/s throughput (all streams, 1m)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 14
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(rig_llm_generation_tokens_total[1m])",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(rig_llm_generation_tokens_total[1m]))",
+     "legendFormat": "total",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Aggregate output tokens per second across all parallel streams."
+  },
+  {
+   "id": 12,
+   "title": "Decode t/s per watt (GPU efficiency)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 14
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(rig_llm_decode_tokens_per_second > 0) / on(uuid) group_left() nvidia_smi_power_draw_watts",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 2
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Live decode t/s divided by that card's power draw."
+  },
+  {
+   "type": "row",
+   "title": "LLM engines \u2014 load, KV, cache",
+   "collapsed": false,
+   "id": 13,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 22
+   },
+   "panels": []
+  },
+  {
+   "id": 14,
    "title": "Requests running / waiting",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 6,
-    "y": 0
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 23
+   },
    "targets": [
     {
-     "expr": "vllm:num_requests_running",
-     "legendFormat": "{{engine}} {{__name__}}"
+     "refId": "A",
+     "expr": "rig_llm_requests_running",
+     "legendFormat": "{{model}} running",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     },
     {
-     "expr": "vllm:num_requests_waiting",
-     "legendFormat": "{{engine}} {{__name__}}"
+     "refId": "B",
+     "expr": "rig_llm_requests_waiting",
+     "legendFormat": "{{model}} waiting",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "",
+     "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
-   "title": "KV cache usage",
+   "id": 15,
+   "title": "KV cache / context fill",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 12,
-    "y": 0
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 23
+   },
    "targets": [
     {
-     "expr": "vllm:gpu_cache_usage_perc",
-     "legendFormat": "{{engine}}"
+     "refId": "A",
+     "expr": "rig_llm_kv_usage_ratio",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -99,29 +800,56 @@
      "unit": "percentunit",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
     },
     "overrides": []
-   }
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Strata: largest slot context / 262K. vLLM A/B: kv_cache_usage_perc of the 204K fp8 pool (only live requests)."
   },
   {
-   "title": "Prefix cache hit ratio",
+   "id": 16,
+   "title": "Prefix cache hit ratio (30m)",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 18,
-    "y": 0
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 23
+   },
    "targets": [
     {
-     "expr": "rate(vllm:external_prefix_cache_hits_total[5m]) / clamp_min(rate(vllm:external_prefix_cache_queries_total[5m]),0.001)",
-     "legendFormat": "{{engine}}"
+     "refId": "A",
+     "expr": "rate(rig_llm_prompt_cached_tokens_total[30m]) / (rate(rig_llm_prompt_tokens_total[30m]) > 0)",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -129,89 +857,467 @@
      "unit": "percentunit",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Share of prompt tokens served from cache (token-weighted). Gaps = no requests in the window."
+  },
+  {
+   "id": 17,
+   "title": "TTFT-side: prefill seconds per request (15m)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 31
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(rig_llm_prefill_seconds_total[15m]) / (rate(rig_llm_requests_total[15m]) > 0)",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
+   "id": 18,
+   "title": "Prompt tokens/s (incl. cached) vs computed",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 31
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(rig_llm_prompt_tokens_total[5m])",
+     "legendFormat": "{{model}} total",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "rate(rig_llm_prompt_tokens_total[5m]) - rate(rig_llm_prompt_cached_tokens_total[5m])",
+     "legendFormat": "{{model}} computed",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 19,
+   "title": "Requests/min completed",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 31
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(rig_llm_requests_total[5m]) * 60",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 20,
+   "title": "vLLM B: MTP accepted tokens / draft",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 39
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(vllm:spec_decode_num_accepted_tokens_total[5m]) / (rate(vllm:spec_decode_num_drafts_total[5m]) > 0)",
+     "legendFormat": "{{engine}} accepted/draft",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 2
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 21,
+   "title": "vLLM B: preemptions / s",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 39
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(vllm:num_preemptions_total[5m])",
+     "legendFormat": "{{engine}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 22,
+   "title": "Engine up",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 39
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_up",
+     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1,
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "type": "row",
+   "title": "GPUs",
+   "collapsed": false,
+   "id": 23,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 47
+   },
+   "panels": []
+  },
+  {
+   "id": 24,
    "title": "GPU util %",
    "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
    "gridPos": {
     "h": 8,
-    "w": 6,
+    "w": 8,
     "x": 0,
-    "y": 8
-   },
-   "datasource": {
-    "type": "prometheus",
-    "uid": "rigprom"
+    "y": 48
    },
    "targets": [
     {
-     "expr": "nvidia_smi_utilization_gpu_ratio",
-     "legendFormat": "{{uuid}}"
+     "refId": "A",
+     "expr": "nvidia_smi_utilization_gpu_ratio * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "percent",
+     "unit": "percentunit",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
     },
     "overrides": []
-   }
-  },
-  {
-   "title": "GPU temp C",
-   "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 6,
-    "y": 8
    },
-   "datasource": {
-    "type": "prometheus",
-    "uid": "rigprom"
-   },
-   "targets": [
-    {
-     "expr": "nvidia_smi_temperature_gpu",
-     "legendFormat": "{{uuid}}"
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
     }
-   ],
-   "fieldConfig": {
-    "defaults": {
-     "unit": "celsius",
-     "custom": {
-      "drawStyle": "line",
-      "fillOpacity": 8
-     }
-    },
-    "overrides": []
    }
   },
   {
+   "id": 25,
    "title": "GPU power W",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 12,
-    "y": 8
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 48
+   },
    "targets": [
     {
-     "expr": "nvidia_smi_power_draw_watts",
-     "legendFormat": "{{uuid}}"
+     "refId": "A",
+     "expr": "nvidia_smi_power_draw_watts * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -219,29 +1325,217 @@
      "unit": "watt",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
-   "title": "SM clock MHz",
+   "id": 26,
+   "title": "GPU core temp C",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 18,
-    "y": 8
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 48
+   },
    "targets": [
     {
-     "expr": "nvidia_smi_clocks_current_sm_clock_hz / 1e6",
-     "legendFormat": "{{uuid}}"
+     "refId": "A",
+     "expr": "nvidia_smi_temperature_gpu * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 27,
+   "title": "GPU VRAM / hotspot C (gputemps)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 56
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_gpu_sensor_temp_celsius{sensor=~\"vram|junction\"} * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}} {{sensor}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 28,
+   "title": "VRAM used",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 56
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "nvidia_smi_memory_used_bytes * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 29,
+   "title": "SM clock MHz",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 56
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "nvidia_smi_clocks_current_sm_clock_hz / 1e6 * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -249,59 +1543,985 @@
      "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
-   "title": "VRAM used",
-   "type": "timeseries",
+   "type": "row",
+   "title": "Power & electricity (ESTIMATE: GPUs + CPU RAPL + ~55 W rest, /0.89 PSU; recording rules rig:*)",
+   "collapsed": false,
+   "id": 30,
    "gridPos": {
-    "h": 8,
-    "w": 6,
+    "h": 1,
+    "w": 24,
     "x": 0,
-    "y": 16
+    "y": 64
    },
+   "panels": []
+  },
+  {
+   "id": 31,
+   "title": "System power now (wall, est.)",
+   "type": "stat",
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 65
+   },
    "targets": [
     {
-     "expr": "nvidia_smi_memory_used_bytes",
-     "legendFormat": "{{uuid}}"
+     "refId": "A",
+     "expr": "rig:power_system_wall_watts",
+     "legendFormat": "system",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "bytes",
-     "custom": {
-      "drawStyle": "line",
-      "fillOpacity": 8
+     "unit": "watt",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1100
+       },
+       {
+        "color": "red",
+        "value": 1350
+       }
+      ]
      }
     },
     "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "No wall meter: GPUs (NVML) + CPU package (RAPL) + ~10% CPU VRM + ~55 W rest of the box, divided by PSU efficiency 0.89. +-10-15%. Rules: rig/config/prometheus-rules/power.yml."
+  },
+  {
+   "id": 32,
+   "title": "Cost now",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig:electricity_cost_rsd_per_hour",
+     "legendFormat": "RSD/h",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "rig:electricity_price_rsd_per_kwh",
+     "legendFormat": "RSD/kWh",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 25.6 / NT 17.2 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20."
+  },
+  {
+   "id": 33,
+   "title": "Today (since 00:00)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000",
+     "legendFormat": "kWh",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "RSD",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "timeFrom": "now/d",
+   "hideTimeOverride": false
+  },
+  {
+   "id": 34,
+   "title": "This month",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000",
+     "legendFormat": "kWh",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "RSD",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "timeFrom": "now/M",
+   "hideTimeOverride": false
+  },
+  {
+   "id": 35,
+   "title": "Dashboard range",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000",
+     "legendFormat": "kWh",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "RSD",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Energy and cost over the time range picked at the top right."
+  },
+  {
+   "id": 36,
+   "title": "Month projection (7d avg x 730 h)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 20,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "avg_over_time(rig:electricity_cost_rsd_per_hour[7d]) * 730",
+     "legendFormat": "RSD / month",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "avg_over_time(rig:power_system_wall_watts[7d]) * 730 / 1000",
+     "legendFormat": "kWh / month",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
    }
   },
   {
+   "id": 37,
+   "title": "System power breakdown (wall, est.)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 16,
+    "x": 0,
+    "y": 70
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig:power_gpu_watts",
+     "legendFormat": "GPUs (3 cards, NVML)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "rig:power_cpu_watts",
+     "legendFormat": "CPU package (RAPL)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "C",
+     "expr": "rig:power_other_watts",
+     "legendFormat": "rest of box (est.)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "D",
+     "expr": "rig:power_system_wall_watts - rig:power_system_dc_watts",
+     "legendFormat": "PSU losses (est.)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "watt",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 40,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "normal"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "No wall meter: GPUs (NVML) + CPU package (RAPL) + ~10% CPU VRM + ~55 W rest of the box, divided by PSU efficiency 0.89. +-10-15%. Rules: rig/config/prometheus-rules/power.yml."
+  },
+  {
+   "id": 38,
+   "title": "Electricity cost RSD/h",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 70
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig:electricity_cost_rsd_per_hour",
+     "legendFormat": "RSD/h",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "System power x current tariff (NT 00-08 is ~1/3 cheaper)."
+  },
+  {
+   "type": "row",
+   "title": "Fans",
+   "collapsed": false,
+   "id": 39,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 78
+   },
+   "panels": []
+  },
+  {
+   "id": 40,
+   "title": "GPU fan %",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 79
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "nvidia_smi_fan_speed_ratio * on(uuid) group_left(gpu) rig_gpu_info",
+     "legendFormat": "{{gpu}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "NVML fan duty per card (3090s: Vix override curve; 5090: VBIOS)."
+  },
+  {
+   "id": 41,
+   "title": "Board fans RPM",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 79
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "node_hwmon_fan_rpm{job=\"node\"} * on(chip,sensor) group_left(fan) rig_fan_info",
+     "legendFormat": "{{fan}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "rotrpm",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "nct6799 headers with a tach: radiator (CPU_FAN1), rear (CPU_FAN2), front 3x140 (CHA_FAN), pump. Bottom 2x P12 Pro on CHA_FAN4 are invisible to Linux (BIOS curve, no tach)."
+  },
+  {
+   "id": 42,
+   "title": "Board fan PWM %",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 79
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "node_hwmon_pwm{job=\"node\",sensor=~\"pwm2|pwm3|pwm4|pwm5\"} / 255",
+     "legendFormat": "{{sensor}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pwm2"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "AIO radiator fans PWM"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pwm3"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Rear exhaust PWM"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pwm5"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Front intake PWM"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "pwm4"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "AIO pump PWM"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "fancontrol output (all follow CPU Tctl 50-80 C; front floor 110 > rear 75 = positive pressure). Pump = BIOS fixed 255."
+  },
+  {
+   "type": "row",
+   "title": "Host",
+   "collapsed": false,
+   "id": 43,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 87
+   },
+   "panels": []
+  },
+  {
+   "id": 44,
+   "title": "CPU busy %",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 88
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"node\"}[1m]))",
+     "legendFormat": "CPU",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 45,
+   "title": "CPU temp C",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 88
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "node_hwmon_temp_celsius{job=\"node\",chip=~\".*18_3\",sensor=\"temp1\"}",
+     "legendFormat": "CPU package (Tctl)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "celsius",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 46,
    "title": "RAM available",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 6,
-    "y": 16
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 88
+   },
    "targets": [
     {
-     "expr": "node_memory_MemAvailable_bytes",
-     "legendFormat": "mem avail"
+     "refId": "A",
+     "expr": "node_memory_MemAvailable_bytes{job=\"node\"}",
+     "legendFormat": "available",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "node_memory_SwapFree_bytes{job=\"node\"}",
+     "legendFormat": "swap free",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
@@ -309,107 +2529,294 @@
      "unit": "bytes",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
-   "title": "CPU load / disk / avail",
+   "id": 47,
+   "title": "Load / disk free",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 12,
-    "y": 16
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 96
+   },
    "targets": [
     {
-     "expr": "node_load1",
-     "legendFormat": "{{metric}}"
+     "refId": "A",
+     "expr": "node_load1{job=\"node\"}",
+     "legendFormat": "load1",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     },
     {
-     "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"}",
-     "legendFormat": "{{metric}}"
+     "refId": "B",
+     "expr": "node_filesystem_avail_bytes{mountpoint=\"/\",job=\"node\"}",
+     "legendFormat": "/ free",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "",
+     "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
-    "overrides": []
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "/ free"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "bytes"
+       },
+       {
+        "id": "custom.axisPlacement",
+        "value": "right"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
+   "type": "row",
+   "title": "LiteLLM gateway (summary \u2014 full view: dashboard 'LiteLLM gateway')",
+   "collapsed": false,
+   "id": 48,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 104
+   },
+   "panels": []
+  },
+  {
+   "id": 49,
    "title": "LiteLLM req/s by model",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 18,
-    "y": 16
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 105
+   },
    "targets": [
     {
+     "refId": "A",
      "expr": "sum by (requested_model) (rate(litellm_proxy_total_requests_metric_total[5m]))",
-     "legendFormat": "{{requested_model}}"
+     "legendFormat": "{{requested_model}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "",
+     "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   },
   {
+   "id": 50,
    "title": "LiteLLM failed req/s",
    "type": "timeseries",
-   "gridPos": {
-    "h": 8,
-    "w": 6,
-    "x": 0,
-    "y": 24
-   },
    "datasource": {
     "type": "prometheus",
     "uid": "rigprom"
    },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 105
+   },
    "targets": [
     {
-     "expr": "sum by (model) (rate(litellm_proxy_failed_requests_metric_total[5m]))",
-     "legendFormat": "{{model}}"
+     "refId": "A",
+     "expr": "sum by (requested_model, exception_status) (rate(litellm_proxy_failed_requests_metric_total[5m]))",
+     "legendFormat": "{{requested_model}} {{exception_status}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
     }
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "",
+     "unit": "none",
      "custom": {
       "drawStyle": "line",
-      "fillOpacity": 8
-     }
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
     },
     "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 51,
+   "title": "LiteLLM in-flight",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 105
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(litellm_in_flight_requests)",
+     "legendFormat": "in flight",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
    }
   }
  ],
- "schemaVersion": 39,
- "version": 1
+ "templating": {
+  "list": []
+ },
+ "graphTooltip": 1
 }

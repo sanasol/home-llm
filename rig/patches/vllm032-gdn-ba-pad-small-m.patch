@@ -1,0 +1,96 @@
+Port of syv-ai/HyperQwen PR #396 (gdn-ba-pad-small-m, cut against vLLM 0.31) to the vLLM 0.32.0 venv
+(~/HyperQwen-0.32/venv). Pads 2-4 token batches of the bf16 GDN in_proj_ba GEMM to 5 rows
+(cuBLAS cliff on sm86; MTP-3 verify = 4 tokens). Kill switch: VLLM_GDN_BA_PAD_SMALL_M=0.
+Measured on the rig (docs/22): decode +6.5% RU / +11.7% EN / +10% code at equal acceptance.
+Apply: cd <venv>/lib/python3.14/site-packages/vllm && patch -p1 --fuzz 0 < this-file
+
+diff -ruN a/envs.py b/envs.py
+--- a/envs.py	2026-10-30 04:03:51.267626971 +0100
++++ b/envs.py	2026-10-30 04:03:51.268626993 +0100
+@@ -132,6 +132,7 @@
+     VLLM_USE_HW_AGNOSTIC: bool = False
+     VLLM_ENABLE_FLA_PACKED_RECURRENT_DECODE: bool = True
+     VLLM_GDN_DECODE_KERNEL: Literal["cuda", "triton"] = "cuda"
++    VLLM_GDN_BA_PAD_SMALL_M: bool = True
+     VLLM_DISABLE_PYNCCL: bool = False
+     VLLM_USE_OINK_OPS: bool = False
+     VLLM_MXFP4_EMULATION_DEQUANT_AT_LOAD: bool = False
+@@ -1284,6 +1285,11 @@
+         ["cuda", "triton"],
+         case_sensitive=False,
+     ),
++    # Pad 2-4 token batches of the GDN in_proj_ba GEMM to 5 rows, stepping
++    # around a cuBLAS kernel-selection cliff at that shape (speculative verify).
++    "VLLM_GDN_BA_PAD_SMALL_M": lambda: bool(
++        int(os.getenv("VLLM_GDN_BA_PAD_SMALL_M", "1"))
++    ),
+     # Disable pynccl (using torch.distributed instead)
+     "VLLM_DISABLE_PYNCCL": lambda: (
+         os.getenv("VLLM_DISABLE_PYNCCL", "False").lower() in ("true", "1")
+diff -ruN a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py
+--- a/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py	2026-10-30 04:03:51.270627037 +0100
++++ b/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py	2026-10-30 04:03:51.271877454 +0100
+@@ -29,6 +29,7 @@
+     ColumnParallelLinear,
+     MergedColumnParallelLinear,
+     RowParallelLinear,
++    UnquantizedLinearMethod,
+ )
+ from vllm.model_executor.layers.mamba.gdn.base import GatedDeltaNetAttention
+ from vllm.model_executor.layers.mamba.mamba_mixer2 import mamba_v2_sharded_weight_loader
+@@ -531,6 +532,14 @@
+             prefix=f"{prefix}.in_proj_ba",
+         )
+         self.disable_tp_for_ba_proj = self.maybe_disable_tp(self.quant_config)
++        # Pad 2-4 token batches of the bf16 in_proj_ba GEMM to 5 rows (see
++        # gdn_ba_proj below). Only the plain unquantized, bias-free projection.
++        self.ba_proj_pad_small_m = (
++            envs.VLLM_GDN_BA_PAD_SMALL_M
++            and current_platform.is_cuda()
++            and isinstance(self.in_proj_ba.quant_method, UnquantizedLinearMethod)
++            and self.in_proj_ba.bias is None
++        )
+ 
+         query_key_settings = (self.key_dim, 0, False)
+         value_settings = (self.value_dim, 0, False)
+@@ -993,7 +1002,10 @@
+         # Part 1: Input Projection
+         # ============================================================
+         mixed_qkvz, _ = self.in_proj_qkvz(hidden_states)
+-        ba, _ = self.in_proj_ba(hidden_states)
++        if self.ba_proj_pad_small_m:
++            ba = torch.ops.vllm.gdn_ba_proj(hidden_states, self.in_proj_ba.weight)
++        else:
++            ba, _ = self.in_proj_ba(hidden_states)
+ 
+         use_fused_gdn_spec_decode = (
+             self.enable_fused_gdn_spec_decode
+@@ -2057,3 +2069,28 @@
+     op_func=qwen_gdn_attention_core_fused_norm_packed,
+     mutates_args=["core_attn_out"],
+ )
++
++
++def gdn_ba_proj(hidden_states: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
++    """in_proj_ba (bf16, N = 2 * num_v_heads) with 2-4 token batches padded to 5.
++
++    cuBLAS picks a 16x16 wmma kernel for M = 2..4 at this skinny shape (~5x slower
++    on an RTX 3090); MTP-3 verify steps (4 tokens) sit exactly in that window.
++    A custom op so the branch on the batch size stays out of the compiled graph.
++    """
++    num_tokens = hidden_states.size(0)
++    if 2 <= num_tokens <= 4:
++        padded = torch.nn.functional.pad(hidden_states, (0, 0, 0, 5 - num_tokens))
++        return torch.nn.functional.linear(padded, weight)[:num_tokens]
++    return torch.nn.functional.linear(hidden_states, weight)
++
++
++def gdn_ba_proj_fake(hidden_states: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
++    return hidden_states.new_empty((hidden_states.size(0), weight.size(0)))
++
++
++direct_register_custom_op(
++    op_name="gdn_ba_proj",
++    op_func=gdn_ba_proj,
++    fake_impl=gdn_ba_proj_fake,
++)

@@ -1,5 +1,5 @@
 """Rig monitor: one page for the whole box — Strata main (:8001) + two HyperQwen
-engines (:18020 A speed, :18021 B 262K), all three GPUs and the host.
+engines (:18020 A, :18021 B — identical profile, both vLLM 0.32), all three GPUs and the host.
 
 Samples Strata /metrics (JSON), both vLLM /metrics (Prometheus), nvidia-smi (+ dmon
 -s t for real PCIe Rx/Tx MB/s), /proc, hwmon and the journald access logs of both
@@ -13,13 +13,14 @@ API:  /api/state   live gauges + history ring (RAM) + recent requests
       /, /hw  pages (index.html / hw.html read per request)
 
 Env: STRATA_URL, STRATA_KEY (JSON with api_key), A_URL, B_URL, VLLM_ENV (KEY=VAL
-file with VLLM_API_KEY, shared by both HyperQwen), A_UNIT, B_UNIT, HIST_DB, PORT.
+file with VLLM_API_KEY, shared by both HyperQwen), A_UNIT, B_UNIT, HIST_DB, PORT,
+PROM_URL (Prometheus with the rig:power_* / rig:electricity_* recording rules, docs/14).
 """
 import json, os, re, sqlite3, subprocess, threading, time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 STRATA = os.environ.get("STRATA_URL", "http://127.0.0.1:8001")
@@ -31,6 +32,7 @@ A_UNIT = os.environ.get("A_UNIT", "hyperqwen-a")
 B_UNIT = os.environ.get("B_UNIT", "hyperqwen-b")
 MAIN_UNIT = os.environ.get("MAIN_UNIT", "llm-main")
 PORT = int(os.environ.get("PORT", "8090"))
+PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 HIST_DB = os.environ.get("HIST_DB", str(Path(__file__).with_name("hist.db")))
 HISTORY = 900
 ROLL_S = 60           # rollup bucket
@@ -41,7 +43,7 @@ PAGE = Path(__file__).with_name("index.html")
 # engine table: the page and the request rows label by these keys
 ENG = {"main": {"label": "Flash-Next", "sub": "Strata :8001 · RTX 5090"},
        "a": {"label": "Qwen 27B A", "sub": "HyperQwen :18020 · 3090 #1 · speed"},
-       "b": {"label": "Qwen 27B B", "sub": "HyperQwen :18021 · 3090 #2 · 262K"}}
+       "b": {"label": "Qwen 27B B", "sub": "HyperQwen :18021 · 3090 #2 · 150K · clone of A"}}
 
 history = deque(maxlen=HISTORY)
 _last_gs = []
@@ -660,6 +662,11 @@ def sample(prev, prev_t, tick):
         point["vram_by"] = [x.get("memory.used") for x in gs]
         point["pcie_rx_by"] = [x.get("pcie_rx_mbps") for x in gs]
         point["pcie_tx_by"] = [x.get("pcie_tx_mbps") for x in gs]
+    # system power = live GPU sum (nvidia-smi; _last_gs on off-ticks) + Prometheus CPU/rest (15 s) x PSU factor:
+    # the same estimate as rig:power_system_wall_watts, but never lagging the GPU numbers shown next to it
+    en = _energy
+    if en.get("psu_k") and t - en.get("t", 0) < 60 and point.get("gpu_power_by"):
+        point["sys_power"] = round((sum(point["gpu_power_by"]) + (en["cpu_w"] or 0) + (en["other_w"] or 0)) * en["psu_k"], 0)
 
     # request rows
     for eid, log in LOGS.items():
@@ -682,6 +689,7 @@ def sample(prev, prev_t, tick):
                         "b": {"stats": stats["b"] or state["eng"]["b"]["stats"]}}
         state["host"] = h
         state["hw"] = hw
+        state["energy"] = _energy
         state["updated"] = t
         if g:
             state["gpus"] = g
@@ -744,7 +752,7 @@ def rollup_and_prune():
             r = {"t": round(now / ROLL_S) * ROLL_S, "n": len(pts),
                  "cpu_pct": avg("cpu_pct"), "disk_r_mbps": avg("disk_r_mbps"), "disk_w_mbps": avg("disk_w_mbps"),
                  "gpu_util": avg("gpu_util"), "gpu_temp": avg("gpu_temp"), "gpu_power": avg("gpu_power"),
-                 "vram_gib": avg("vram_gib"),
+                 "sys_power": avg("sys_power"), "vram_gib": avg("vram_gib"),
                  "main_tps": avg("main_tps"), "main_prefill_tps": avg("main_prefill_tps"),
                  "a_tps": avg("a_tps"), "a_prefill_tps": avg("a_prefill_tps"), "a_kv_pct": avg("a_kv_pct"),
                  "b_tps": avg("b_tps"), "b_prefill_tps": avg("b_prefill_tps"), "b_kv_pct": avg("b_kv_pct")}
@@ -921,6 +929,44 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
+_energy = {}  # last Prometheus power/cost snapshot (estimate; rules in rig/config/prometheus-rules/power.yml)
+
+
+def prom_scalar(expr):
+    try:
+        with urlopen(PROM + "/api/v1/query?" + urlencode({"query": expr}), timeout=5) as r:
+            res = json.load(r)["data"]["result"]
+        return float(res[0]["value"][1]) if res else None
+    except Exception:
+        return None
+
+
+def energy_poller():
+    """Every 15 s: system power (wall, estimated), tariff, kWh/RSD totals for today / month / 24h / 30d."""
+    global _energy
+    while True:
+        now = time.time()
+        lt = time.localtime(now)
+        midnight = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
+        month0 = time.mktime((lt.tm_year, lt.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+        e = {k: prom_scalar(q) for k, q in (
+            ("wall_w", "rig:power_system_wall_watts"), ("gpu_w", "rig:power_gpu_watts"),
+            ("cpu_w", "rig:power_cpu_watts"), ("other_w", "rig:power_other_watts"),
+            ("price", "rig:electricity_price_rsd_per_kwh"), ("rsd_h", "rig:electricity_cost_rsd_per_hour"),
+            ("month_proj_rsd", "avg_over_time(rig:electricity_cost_rsd_per_hour[7d]) * 730"),
+            ("month_proj_kwh", "avg_over_time(rig:power_system_wall_watts[7d]) * 730 / 1000"))}
+        for name, secs in (("today", now - midnight), ("month", now - month0), ("d1", 86400), ("d30", 30 * 86400)):
+            w = f"[{max(60, int(secs))}s]"
+            e[name + "_kwh"] = prom_scalar(f"sum_over_time(rig:power_system_wall_watts{w}) * 15 / 3600 / 1000")
+            e[name + "_rsd"] = prom_scalar(f"sum_over_time(rig:electricity_cost_rsd_per_hour{w}) * 15 / 3600")
+        e["t"] = now
+        e["ok"] = e["wall_w"] is not None
+        dc = sum(e[k] or 0 for k in ("gpu_w", "cpu_w", "other_w"))
+        e["psu_k"] = e["wall_w"] / dc if e["ok"] and dc else None  # wall/dc factor (1/PSU efficiency) from the rules
+        _energy = e
+        time.sleep(15)
+
+
 def log_unit(eid):
     return A_UNIT if eid == "a" else B_UNIT
 
@@ -938,5 +984,6 @@ def info_refresher():
 db_init()
 db_backfill()
 threading.Thread(target=info_refresher, daemon=True).start()
+threading.Thread(target=energy_poller, daemon=True).start()
 threading.Thread(target=sampler, daemon=True).start()
 ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

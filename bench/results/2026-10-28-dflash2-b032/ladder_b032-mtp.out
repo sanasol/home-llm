@@ -1,0 +1,7 @@
+LADDER b032-mtp pool=140080 tok, ctx=[8000, 40000, 90000], prompts=4, reps=1, out=300, K=3.0
+  ctx=8000 rep=1 token lens: [7950, 7950, 7953, 7954]
+LADDER b032-mtp ctx=8000 #1 out=1200 dur=27.78s win=43.20 tok/s decode=103.5 tok/s | drafts=1392 acc=735 tok/step=2.58 ms/step=59.9
+  ctx=40000 rep=1 token lens: [39780, 39780, 39781, 39781]
+LADDER b032-mtp ctx=40000 #1 out=1200 dur=109.52s win=10.96 tok/s decode=99.2 tok/s | drafts=1344 acc=752 tok/step=2.68 ms/step=244.5
+  ctx=90000 rep=1 token lens: [89512, 89513, 89512, 89513]
+LADDER b032-mtp ctx=90000 #1 out=1200 dur=296.43s win=4.05 tok/s decode=53.0 tok/s | drafts=1362 acc=827 tok/step=2.82 ms/step=652.9

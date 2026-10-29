@@ -1,0 +1,27 @@
+# Environment & state at snapshot time (2026-10-28), rig rig
+
+## /opt/rig/side.env (values redacted; owner al, not root)
+VLLM_API_KEY=<redacted len=24>
+
+## venv (shared by A and B)
+- python 3.14 (venv at ~/HyperQwen/venv)
+- vLLM 0.31.0 (pip show)
+- CUDA_HOME = .../site-packages/nvidia/cu13
+- driver 615.71.09 (apt-mark hold family)
+
+## HyperQwen repo
+- ~/HyperQwen @ main == origin/main, HEAD ce9615c "Merge pull request #378 from syv-ai/land-375" (21.10) = latest upstream
+- untracked (leftover from DFlash2 drafter experiments): prepare/draft_vocab_cyr.json, prepare/draft_vocab_cyr_fast.json, prepare/draft_vocab_fast_ids.json
+
+## GPUs
+- slot A: GPU-9c7268f4-61e4-a63f-7a6f-e33d57743219 (external 3090 #1)
+- slot B: GPU-2e674bbf-af1e-4ad3-17f6-abc8e47b4f36 (internal 3090 #2, OCuLink x4)
+
+## CTX -> defaults in single-user/start_qwen.sh (resolved per profile)
+- CTX=fast : MAX_LEN default 65536, bf16 KV (line ~213)
+- CTX=huge : MAX_LEN default 200000, KVarN 4/2-bit KV (line ~218); unit overrides MAX_LEN=262144
+- CTX=long : MAX_LEN default 150000, fp8 KV on FlashInfer (line ~223); k=4 drafts crash on FlashInfer -> MTP uses 3; PTH_FA=0 keeps fp8 (int8 pth-flash-attn would be the alternative)
+- DFLASH_MAX_LEN > MAX_LEN > profile default (line ~207)
+
+## LiteLLM
+- names qwen3.8-27b-a / qwen3.8-27b-b map to :18020 / :18021 (served-model-name identical "qwen3.8-27b" on both; routing by URL) — NOT changed by the clone.
