@@ -9,8 +9,8 @@ House rules (docs/14, "Grafana dashboard rules"), applied by enforce() to EVERY 
   * every timeseries/graph-like panel: tooltip mode "multi" (UI: "All"), sorted desc;
   * dashboard graphTooltip = 1 (shared crosshair across panels);
   * GPU series are named via `* on(uuid) group_left(gpu) rig_gpu_info`, never raw uuids;
-  * LLM series come from rig_llm_* (one family covers Strata and vLLM A/B), legend
-    "{{model}} · {{gpu}}".
+  * LLM series come from rig_llm_* (one family covers the three Strata lanes FN 5090 /
+    FN 3090 #1 / FN 3090 #2), legend "{{lane}}" (= human lane name; GPU panels use {{gpu}}).
 Edit THIS file, never the generated JSON.
 """
 import json
@@ -21,8 +21,9 @@ DS = {"type": "prometheus", "uid": "rigprom"}
 OUT = Path(__file__).resolve().parent / "dashboards"
 TOOLTIP = {"mode": "multi", "sort": "desc", "hideZeros": False}
 LEGEND = {"displayMode": "list", "placement": "bottom", "showLegend": True}
-LLM = "{{model}} · {{gpu}}"
+LLM = "{{lane}}"
 GPU_JOIN = " * on(uuid) group_left(gpu) rig_gpu_info"
+LANES = (("0", "FN 5090"), ("1", "FN 3090 #1"), ("2", "FN 3090 #2"))   # nvidia-smi index -> lane
 
 
 def enforce(d):
@@ -141,18 +142,18 @@ class Board:
 def overview():
     b = Board()
     b.row("LLM speed — every model / GPU (rig_llm_exporter :9097)")
-    for e, gpu in (("0", "RTX 5090"), ("2", "RTX 3090 #1 (A)"), ("1", "RTX 3090 #2 (B)")):
+    for e, gpu in LANES:
         b.stat(f"Decode t/s · {gpu}",
-               [(f'rig_llm_decode_tokens_per_second{{gpu_index="{e}"}}', "{{model}}")], unit="none", w=4,
+               [(f'rig_llm_decode_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=4,
                desc="Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle.")
-    for e, gpu in (("0", "RTX 5090"), ("2", "RTX 3090 #1 (A)"), ("1", "RTX 3090 #2 (B)")):
+    for e, gpu in LANES:
         b.stat(f"Prefill t/s · {gpu}",
-               [(f'rig_llm_prefill_tokens_per_second{{gpu_index="{e}"}}', "{{model}}")], unit="none", w=4,
+               [(f'rig_llm_prefill_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=4,
                desc="Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s.")
-    b.ts("Decode t/s by model · GPU (live)", [("rig_llm_decode_tokens_per_second", LLM)], w=12, minv=0,
+    b.ts("Decode t/s by lane (live)", [("rig_llm_decode_tokens_per_second", LLM)], w=12, minv=0,
          desc="Instantaneous decode speed while generating. Gaps to 0 = idle.")
-    b.ts("Prefill t/s by model · GPU (live)", [("rig_llm_prefill_tokens_per_second", LLM)], w=12, minv=0,
-         desc="Uncached prompt processing speed. vLLM counts prefill in scheduler chunks, so B is spiky.")
+    b.ts("Prefill t/s by lane (live)", [("rig_llm_prefill_tokens_per_second", LLM)], w=12, minv=0,
+         desc="Uncached prompt processing speed per lane.")
     b.ts("Effective decode t/s per request (5m)",
          [("rate(rig_llm_generation_tokens_total[5m]) / rate(rig_llm_decode_seconds_total[5m]) > 0", LLM)],
          w=8, minv=0, desc="generated tokens / decode seconds over 5 min = average per-stream speed.")
@@ -164,11 +165,10 @@ def overview():
          w=8, minv=0, decimals=2, desc="Live decode t/s divided by that card's power draw.")
 
     b.row("LLM engines — load, KV, cache")
-    b.ts("Requests running / waiting", [("rig_llm_requests_running", "{{model}} running"),
-                                        ("rig_llm_requests_waiting", "{{model}} waiting")], w=8, minv=0, decimals=0)
+    b.ts("Requests running / waiting", [("rig_llm_requests_running", "{{lane}} running"),
+                                        ("rig_llm_requests_waiting", "{{lane}} waiting")], w=8, minv=0, decimals=0)
     b.ts("KV cache / context fill", [("rig_llm_kv_usage_ratio", LLM)], unit="percentunit", w=8, minv=0, maxv=1,
-         desc="Strata: largest slot context / 262K. vLLM A/B: kv_cache_usage_perc of the 204K fp8 pool "
-              "(only live requests).")
+         desc="Largest slot context / max context (FN 5090: 256K, FN 3090 lanes: 128K).")
     b.ts("Prefix cache hit ratio (30m)",
          [("rate(rig_llm_prompt_cached_tokens_total[30m]) / (rate(rig_llm_prompt_tokens_total[30m]) > 0)", LLM)],
          unit="percentunit", w=8, minv=0, maxv=1,
@@ -177,14 +177,17 @@ def overview():
          [("rate(rig_llm_prefill_seconds_total[15m]) / (rate(rig_llm_requests_total[15m]) > 0)", LLM)],
          unit="s", w=8, minv=0)
     b.ts("Prompt tokens/s (incl. cached) vs computed",
-         [("rate(rig_llm_prompt_tokens_total[5m])", "{{model}} total"),
-          ("rate(rig_llm_prompt_tokens_total[5m]) - rate(rig_llm_prompt_cached_tokens_total[5m])", "{{model}} computed")],
+         [("rate(rig_llm_prompt_tokens_total[5m])", "{{lane}} total"),
+          ("rate(rig_llm_prompt_tokens_total[5m]) - rate(rig_llm_prompt_cached_tokens_total[5m])", "{{lane}} computed")],
          w=8, minv=0)
     b.ts("Requests/min completed", [("rate(rig_llm_requests_total[5m]) * 60", LLM)], w=8, minv=0)
-    b.ts("vLLM B: MTP accepted tokens / draft", [
-        ("rate(vllm:spec_decode_num_accepted_tokens_total[5m]) / (rate(vllm:spec_decode_num_drafts_total[5m]) > 0)", "{{engine}} accepted/draft")],
-        w=8, minv=0, decimals=2)
-    b.ts("vLLM B: preemptions / s", [("rate(vllm:num_preemptions_total[5m])", "{{engine}}")], w=8, minv=0)
+    b.ts("MTP drafts accepted / offered (15m)", [
+        ("rate(rig_llm_drafts_accepted_total[15m]) / (rate(rig_llm_drafts_offered_total[15m]) > 0)", LLM)],
+        unit="percentunit", w=8, minv=0, maxv=1, desc="Strata MTP speculative decoding acceptance per lane.")
+    b.ts("Host RAM available (shared expert arena lives in RAM)",
+         [('node_memory_MemAvailable_bytes{job="node"}', "MemAvailable"), ('node_memory_SwapFree_bytes{job="node"}', "Swap free")],
+         unit="bytes", w=8, minv=0, desc="Three Strata lanes share one 50 GB expert arena (/mnt/strata-arena); "
+                                          "the engines keep >= 2.5 GiB free for parking conversations.")
     b.ts("Engine up", [("rig_llm_up", LLM)], w=8, minv=0, maxv=1, decimals=0, draw="line")
 
     b.row("GPUs")
@@ -207,7 +210,7 @@ def overview():
     b.stat("Cost now", [("rig:electricity_cost_rsd_per_hour", "RSD/h"),
                         ("rig:electricity_price_rsd_per_kwh", "RSD/kWh")], w=4, decimals=1,
            desc="EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: "
-                "VT 25.6 / NT 17.2 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20.")
+                "VT 26.5 / NT 18.9 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice).")
     b.stat("Today (since 00:00)", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=1, time_from="now/d", graph="none")
     b.stat("This month", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=0, time_from="now/M", graph="none")
     b.stat("Dashboard range", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=1, graph="none",

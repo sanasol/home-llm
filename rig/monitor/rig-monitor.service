@@ -1,6 +1,6 @@
 [Unit]
-Description=Rig monitor (Strata main + vLLM side + hardware, :8090)
-After=network-online.target llm-main.service llm-side.service
+Description=Rig monitor (Strata lanes main + lane2 + lane3, hardware, :8090)
+After=network-online.target llm-main.service llm-lane2.service llm-lane3.service
 
 [Service]
 User=al

@@ -41,7 +41,7 @@
           "execErrState": "OK",
           "for": "5m",
           "annotations": {
-            "summary": "target {{ $labels.job }}/{{ $labels.instance }} down"
+            "summary": "target {{ $labels.job }}/{{ $labels.instance }} {{ $labels.lane }} down"
           },
           "labels": {
             "severity": "critical"
@@ -99,7 +99,7 @@
           "execErrState": "OK",
           "for": "5m",
           "annotations": {
-            "summary": "available RAM {{ $value }}B"
+            "summary": "available RAM {{ $value }}B (< 2.5 GB; the 3 Strata lanes keep a 2.5 GiB floor — check conversation caches / swap)"
           },
           "labels": {
             "severity": "critical"
@@ -113,7 +113,7 @@
               },
               "datasourceUid": "rigprom",
               "model": {
-                "expr": "node_memory_MemAvailable_bytes < 4e9",
+                "expr": "node_memory_MemAvailable_bytes < 2.5e9",
                 "instant": true,
                 "refId": "A"
               }
@@ -447,7 +447,7 @@
           "execErrState": "OK",
           "for": "5m",
           "annotations": {
-            "summary": "LLM engine {{ $labels.model }} ({{ $labels.engine }} on {{ $labels.gpu }}) not answering"
+            "summary": "LLM lane {{ $labels.lane }} ({{ $labels.model }} on {{ $labels.gpu }}) not answering"
           },
           "labels": {
             "severity": "critical"

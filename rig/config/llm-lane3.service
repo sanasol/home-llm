@@ -1,0 +1,21 @@
+[Unit]
+Description=Strata lane3: Qwen3.8-Flash-Next IQ3_S on RTX 3090 (GPU 2, :8004), shared expert arena with llm-main
+After=network-online.target llm-main.service llm-lane2.service
+Wants=network-online.target
+# The shared arena (/mnt/strata-arena tmpfs) is filled by llm-main; start only after main serves.
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=al
+Environment=HOME=~
+Environment=CUDA_DEVICE_ORDER=PCI_BUS_ID
+LimitMEMLOCK=infinity
+CPUAffinity=12-15 28-31
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 90); do curl -s -o /dev/null -m 5 http://127.0.0.1:8001/health && exit 0; sleep 10; done; exit 0'
+ExecStart=~/.local/bin/strata launch --preset lane3 --yes --no-tui
+ExecStop=~/.local/bin/strata launch --stop --preset lane3
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=multi-user.target

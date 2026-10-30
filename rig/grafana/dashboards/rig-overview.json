@@ -44,7 +44,7 @@
   },
   {
    "id": 2,
-   "title": "Decode t/s \u00b7 RTX 5090",
+   "title": "Decode t/s \u00b7 FN 5090",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -60,7 +60,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"0\"}",
-     "legendFormat": "{{model}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -104,7 +104,7 @@
   },
   {
    "id": 3,
-   "title": "Decode t/s \u00b7 RTX 3090 #1 (A)",
+   "title": "Decode t/s \u00b7 FN 3090 #1",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -119,8 +119,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"2\"}",
-     "legendFormat": "{{model}}",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"1\"}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -164,7 +164,7 @@
   },
   {
    "id": 4,
-   "title": "Decode t/s \u00b7 RTX 3090 #2 (B)",
+   "title": "Decode t/s \u00b7 FN 3090 #2",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -179,8 +179,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"1\"}",
-     "legendFormat": "{{model}}",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"2\"}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -224,7 +224,7 @@
   },
   {
    "id": 5,
-   "title": "Prefill t/s \u00b7 RTX 5090",
+   "title": "Prefill t/s \u00b7 FN 5090",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -240,7 +240,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"0\"}",
-     "legendFormat": "{{model}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -284,7 +284,7 @@
   },
   {
    "id": 6,
-   "title": "Prefill t/s \u00b7 RTX 3090 #1 (A)",
+   "title": "Prefill t/s \u00b7 FN 3090 #1",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -299,8 +299,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"2\"}",
-     "legendFormat": "{{model}}",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"1\"}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -344,7 +344,7 @@
   },
   {
    "id": 7,
-   "title": "Prefill t/s \u00b7 RTX 3090 #2 (B)",
+   "title": "Prefill t/s \u00b7 FN 3090 #2",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -359,8 +359,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"1\"}",
-     "legendFormat": "{{model}}",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"2\"}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -404,7 +404,7 @@
   },
   {
    "id": 8,
-   "title": "Decode t/s by model \u00b7 GPU (live)",
+   "title": "Decode t/s by lane (live)",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -420,7 +420,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_decode_tokens_per_second",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -460,7 +460,7 @@
   },
   {
    "id": 9,
-   "title": "Prefill t/s by model \u00b7 GPU (live)",
+   "title": "Prefill t/s by lane (live)",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -476,7 +476,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_prefill_tokens_per_second",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -512,7 +512,7 @@
      "showLegend": true
     }
    },
-   "description": "Uncached prompt processing speed. vLLM counts prefill in scheduler chunks, so B is spiky."
+   "description": "Uncached prompt processing speed per lane."
   },
   {
    "id": 10,
@@ -532,7 +532,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_generation_tokens_total[5m]) / rate(rig_llm_decode_seconds_total[5m]) > 0",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -588,7 +588,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_generation_tokens_total[1m])",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -653,7 +653,7 @@
     {
      "refId": "A",
      "expr": "(rig_llm_decode_tokens_per_second > 0) / on(uuid) group_left() nvidia_smi_power_draw_watts",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -723,7 +723,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_requests_running",
-     "legendFormat": "{{model}} running",
+     "legendFormat": "{{lane}} running",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -732,7 +732,7 @@
     {
      "refId": "B",
      "expr": "rig_llm_requests_waiting",
-     "legendFormat": "{{model}} waiting",
+     "legendFormat": "{{lane}} waiting",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -788,7 +788,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_kv_usage_ratio",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -825,7 +825,7 @@
      "showLegend": true
     }
    },
-   "description": "Strata: largest slot context / 262K. vLLM A/B: kv_cache_usage_perc of the 204K fp8 pool (only live requests)."
+   "description": "Largest slot context / max context (FN 5090: 256K, FN 3090 lanes: 128K)."
   },
   {
    "id": 16,
@@ -845,7 +845,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_prompt_cached_tokens_total[30m]) / (rate(rig_llm_prompt_tokens_total[30m]) > 0)",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -902,7 +902,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_prefill_seconds_total[15m]) / (rate(rig_llm_requests_total[15m]) > 0)",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -957,7 +957,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_prompt_tokens_total[5m])",
-     "legendFormat": "{{model}} total",
+     "legendFormat": "{{lane}} total",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -966,7 +966,7 @@
     {
      "refId": "B",
      "expr": "rate(rig_llm_prompt_tokens_total[5m]) - rate(rig_llm_prompt_cached_tokens_total[5m])",
-     "legendFormat": "{{model}} computed",
+     "legendFormat": "{{lane}} computed",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1021,7 +1021,7 @@
     {
      "refId": "A",
      "expr": "rate(rig_llm_requests_total[5m]) * 60",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1060,7 +1060,7 @@
   },
   {
    "id": 20,
-   "title": "vLLM B: MTP accepted tokens / draft",
+   "title": "MTP drafts accepted / offered (15m)",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -1075,8 +1075,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rate(vllm:spec_decode_num_accepted_tokens_total[5m]) / (rate(vllm:spec_decode_num_drafts_total[5m]) > 0)",
-     "legendFormat": "{{engine}} accepted/draft",
+     "expr": "rate(rig_llm_drafts_accepted_total[15m]) / (rate(rig_llm_drafts_offered_total[15m]) > 0)",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1085,7 +1085,7 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
+     "unit": "percentunit",
      "custom": {
       "drawStyle": "line",
       "lineWidth": 2,
@@ -1097,7 +1097,7 @@
       }
      },
      "min": 0,
-     "decimals": 2
+     "max": 1
     },
     "overrides": []
    },
@@ -1112,11 +1112,12 @@
      "placement": "bottom",
      "showLegend": true
     }
-   }
+   },
+   "description": "Strata MTP speculative decoding acceptance per lane."
   },
   {
    "id": 21,
-   "title": "vLLM B: preemptions / s",
+   "title": "Host RAM available (shared expert arena lives in RAM)",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -1131,8 +1132,17 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rate(vllm:num_preemptions_total[5m])",
-     "legendFormat": "{{engine}}",
+     "expr": "node_memory_MemAvailable_bytes{job=\"node\"}",
+     "legendFormat": "MemAvailable",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "node_memory_SwapFree_bytes{job=\"node\"}",
+     "legendFormat": "Swap free",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1141,7 +1151,7 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
+     "unit": "bytes",
      "custom": {
       "drawStyle": "line",
       "lineWidth": 2,
@@ -1167,7 +1177,8 @@
      "placement": "bottom",
      "showLegend": true
     }
-   }
+   },
+   "description": "Three Strata lanes share one 50 GB expert arena (/mnt/strata-arena); the engines keep >= 2.5 GiB free for parking conversations."
   },
   {
    "id": 22,
@@ -1187,7 +1198,7 @@
     {
      "refId": "A",
      "expr": "rig_llm_up",
-     "legendFormat": "{{model}} \u00b7 {{gpu}}",
+     "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1716,7 +1727,7 @@
     "justifyMode": "auto",
     "orientation": "auto"
    },
-   "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 25.6 / NT 17.2 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20."
+   "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 26.5 / NT 18.9 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice)."
   },
   {
    "id": 33,

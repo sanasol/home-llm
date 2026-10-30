@@ -1,5 +1,5 @@
 [Unit]
-Description=rig LLM exporter: uniform tok/s, KV, cache, counters for Strata/vLLM A/vLLM B (:9097 loopback)
+Description=rig LLM exporter: uniform tok/s, KV, cache, counters for the three Strata lanes FN 5090 / FN 3090 #1 / #2 (:9097 loopback)
 After=network-online.target
 
 [Service]
@@ -8,7 +8,6 @@ User=al
 Group=al
 SupplementaryGroups=systemd-journal
 ExecStart=/usr/bin/python3 /opt/rig/bin/rig_llm_exporter.py
-Environment=A_UNIT=hyperqwen-a
 Restart=always
 RestartSec=5
 Nice=5

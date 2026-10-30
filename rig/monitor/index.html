@@ -434,17 +434,21 @@ a.st-tab{text-decoration:none}
 .hw-sensor{margin-top:10px}
 .req-src{padding:1px 6px;border-radius:5px}
 .req-src.m-main{background:color-mix(in srgb,var(--st-accent) 20%,transparent)}
-.req-src.m-a{background:color-mix(in srgb,var(--st-info) 22%,transparent)}
-.req-src.m-b{background:color-mix(in srgb,var(--st-warn) 22%,transparent)}
+.req-src.m-l2{background:color-mix(in srgb,var(--st-info) 22%,transparent)}
+.req-src.m-l3{background:color-mix(in srgb,var(--st-warn) 22%,transparent)}
 #req-body tr.m-main>td{background:color-mix(in srgb,var(--st-accent) 6%,transparent)}
-#req-body tr.m-a>td{background:color-mix(in srgb,var(--st-info) 7%,transparent)}
-#req-body tr.m-b>td{background:color-mix(in srgb,var(--st-warn) 7%,transparent)}
+#req-body tr.m-l2>td{background:color-mix(in srgb,var(--st-info) 7%,transparent)}
+#req-body tr.m-l3>td{background:color-mix(in srgb,var(--st-warn) 7%,transparent)}
+.eng-card.m-main{border-top:3px solid var(--st-accent)}
+.eng-card.m-l2{border-top:3px solid var(--st-info)}
+.eng-card.m-l3{border-top:3px solid var(--st-warn)}
+.eng-card .card-title .req-src{font-size:11px;font-weight:600;color:var(--st-ink)}
 .rangebar{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}
 .rangebar .st-btn.on{border-color:var(--st-accent);color:var(--st-accent)}
 .rangebar input{background:var(--st-surface);color:var(--st-ink);border:1px solid var(--st-line);border-radius:8px;padding:4px 8px}
 .rangebar .st-btn.c-main.on{border-color:var(--st-accent);color:var(--st-accent)}
-.rangebar .st-btn.c-a.on{border-color:var(--st-info);color:var(--st-info)}
-.rangebar .st-btn.c-b.on{border-color:var(--st-warn);color:var(--st-warn)}
+.rangebar .st-btn.c-l2.on{border-color:var(--st-info);color:var(--st-info)}
+.rangebar .st-btn.c-l3.on{border-color:var(--st-warn);color:var(--st-warn)}
 .req-head--f{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:12px}
 .req-head--f .card-title{justify-self:start}
 .req-head--f .req-filters{justify-self:center;margin:0}
@@ -525,53 +529,55 @@ a.st-tab{text-decoration:none}
 
   <div class="monitor">
     <div class="monitor-row" style="grid-template-columns:repeat(3,1fr)">
-      <div class="st-card state-card">
+      <div class="st-card state-card eng-card m-main">
         <div class="state-card__head">
-          <span class="card-title">Flash-Next · Strata :8001 · <span class="muted">RTX 5090 · 256K</span></span>
-          <span class="badges" id="m-badges">
+          <span class="card-title"><span class="req-src m-main">FN 5090</span> <span class="muted">Strata :8001 · RTX 5090 · 256K</span></span>
+          <span class="badges" id="main-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
             <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
           </span>
         </div>
-        <div class="state-card__row"><span id="m-label">Waiting for a request</span><span class="muted" id="m-detail"></span></div>
-        <div class="st-progress" id="m-progress"><div class="st-progress__bar" id="m-bar" style="width:0%"></div></div>
+        <div class="state-card__row"><span id="main-label">Waiting for a request</span><span class="muted" id="main-detail"></span></div>
+        <div class="st-progress" id="main-progress"><div class="st-progress__bar" id="main-bar" style="width:0%"></div></div>
         <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="m-dec">–</span><small>decode t/s</small><small class="tps-last" id="m-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="m-pre">–</span><small>prefill t/s</small><small class="tps-last" id="m-pre-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="main-dec">–</span><small>decode t/s</small><small class="tps-last" id="main-dec-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="main-pre">–</span><small>prefill t/s</small><small class="tps-last" id="main-pre-last"></small></div>
         </div>
       </div>
-      <div class="st-card state-card">
+      <div class="st-card state-card eng-card m-l2">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B A · HyperQwen :18020 · <span class="muted">3090 #1 · vLLM 0.32 · 150K</span></span>
-          <span class="badges" id="a-badges">
+          <span class="card-title"><span class="req-src m-l2">FN 3090 #1</span> <span class="muted">Strata :8003 · RTX 3090 (idx 1) · 128K</span></span>
+          <span class="badges" id="l2-badges">
             <span class="st-badge" data-s="idle">Idle</span>
+            <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
             <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
           </span>
         </div>
-        <div class="state-card__row"><span id="a-label">Waiting for a request</span><span class="muted" id="a-detail"></span></div>
-        <div class="st-progress" id="a-progress"><div class="st-progress__bar" id="a-bar" style="width:0%"></div></div>
+        <div class="state-card__row"><span id="l2-label">Waiting for a request</span><span class="muted" id="l2-detail"></span></div>
+        <div class="st-progress" id="l2-progress"><div class="st-progress__bar" id="l2-bar" style="width:0%"></div></div>
         <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="a-dec">–</span><small>decode t/s</small><small class="tps-last" id="a-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="a-pre">–</span><small>prefill t/s</small><small class="tps-last" id="a-pre-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="l2-dec">–</span><small>decode t/s</small><small class="tps-last" id="l2-dec-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="l2-pre">–</span><small>prefill t/s</small><small class="tps-last" id="l2-pre-last"></small></div>
         </div>
       </div>
-      <div class="st-card state-card">
+      <div class="st-card state-card eng-card m-l3">
         <div class="state-card__head">
-          <span class="card-title">Qwen 27B B · HyperQwen :18021 · <span class="muted">3090 #2 · 150K · clone of A</span></span>
-          <span class="badges" id="b-badges">
+          <span class="card-title"><span class="req-src m-l3">FN 3090 #2</span> <span class="muted">Strata :8004 · RTX 3090 (idx 2) · 128K</span></span>
+          <span class="badges" id="l3-badges">
             <span class="st-badge" data-s="idle">Idle</span>
+            <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
             <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
           </span>
         </div>
-        <div class="state-card__row"><span id="b-label">Waiting for a request</span><span class="muted" id="b-detail"></span></div>
-        <div class="st-progress" id="b-progress"><div class="st-progress__bar" id="b-bar" style="width:0%"></div></div>
+        <div class="state-card__row"><span id="l3-label">Waiting for a request</span><span class="muted" id="l3-detail"></span></div>
+        <div class="st-progress" id="l3-progress"><div class="st-progress__bar" id="l3-bar" style="width:0%"></div></div>
         <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="b-dec">–</span><small>decode t/s</small><small class="tps-last" id="b-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="b-pre">–</span><small>prefill t/s</small><small class="tps-last" id="b-pre-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="l3-dec">–</span><small>decode t/s</small><small class="tps-last" id="l3-dec-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="l3-pre">–</span><small>prefill t/s</small><small class="tps-last" id="l3-pre-last"></small></div>
         </div>
       </div>
     </div>
@@ -592,26 +598,26 @@ a.st-tab{text-decoration:none}
         <div class="req-head req-head--f"><span class="card-title">Recent requests</span>
           <span class="rangebar req-filters">
             <button class="st-btn st-btn--secondary on" data-reqf="all">all</button>
-            <button class="st-btn st-btn--secondary c-main" data-reqf="main">flash-next</button>
-            <button class="st-btn st-btn--secondary c-a" data-reqf="a">27B A</button>
-            <button class="st-btn st-btn--secondary c-b" data-reqf="b">27B B</button>
+            <button class="st-btn st-btn--secondary c-main" data-reqf="main">FN 5090</button>
+            <button class="st-btn st-btn--secondary c-l2" data-reqf="l2">FN 3090 #1</button>
+            <button class="st-btn st-btn--secondary c-l3" data-reqf="l3">FN 3090 #2</button>
           </span>
           <button class="st-btn st-btn--secondary" id="req-all" style="visibility:hidden">Show all</button></div>
         <div class="table-wrap" id="req-wrap">
           <table class="st-table">
             <thead><tr><th>Time · model</th><th>Status</th><th class="num">Prompt</th><th class="num">Reused</th><th class="num">Output</th>
               <th class="num" title="New prompt tokens per second, excluding reused cache tokens (engine prompt time)">Prefill t/s</th><th class="num">Decode t/s</th>
-              <th class="num" title="Flash-Next only: the share of the experts looked up that were already in VRAM">VRAM hit rate</th><th class="num">Duration</th></tr></thead>
+              <th class="num" title="The share of the experts looked up that were already in VRAM">VRAM hit rate</th><th class="num">Duration</th></tr></thead>
             <tbody id="req-body"><tr><td colspan="9" class="muted">No requests yet</td></tr></tbody>
           </table>
         </div>
-        <p class="muted req-totals" id="req-totals">Requests are kept 7 days (bottom card totals any period).</p>
+        <p class="muted req-totals" id="req-totals">Requests are kept 30 days (the totals card below sums any period).</p>
       </div>
     </div>
 
     <div class="monitor-row">
       <div class="st-card ctx-card">
-        <span class="card-title">Context fill</span>
+        <span class="card-title">Context fill · FN 5090</span>
         <div class="ctx-gauge">
           <svg class="st-gauge" viewBox="0 0 120 120" aria-hidden="true">
             <circle class="st-gauge__track" cx="60" cy="60" r="50" fill="none" stroke-width="10" stroke-linecap="round"
@@ -621,19 +627,19 @@ a.st-tab{text-decoration:none}
           </svg>
           <div class="ctx-gauge__label"><span class="ctx-gauge__pct" id="ctx-pct">0%</span><span class="muted" id="ctx-sub">&ndash;</span></div>
         </div>
-        <div class="bar-row"><span>Flash-Next experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
+        <div class="bar-row"><span>FN 5090 experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
         <div class="st-progress"><div class="st-progress__bar" id="slots-bar" style="width:0%"></div></div>
-        <div class="bar-row"><span>27B A KV fill</span><span class="muted" id="skva-text">&ndash;</span></div>
-        <div class="st-progress" id="skva-progress"><div class="st-progress__bar" id="skva-bar" style="width:0%"></div></div>
-        <div class="bar-row"><span>27B B KV fill</span><span class="muted" id="skvb-text">&ndash;</span></div>
-        <div class="st-progress" id="skvb-progress"><div class="st-progress__bar" id="skvb-bar" style="width:0%"></div></div>
+        <div class="bar-row"><span>FN 3090 #1 context held</span><span class="muted" id="ctx-l2-text">&ndash;</span></div>
+        <div class="st-progress" id="ctx-l2-progress"><div class="st-progress__bar" id="ctx-l2-bar" style="width:0%"></div></div>
+        <div class="bar-row"><span>FN 3090 #2 context held</span><span class="muted" id="ctx-l3-text">&ndash;</span></div>
+        <div class="st-progress" id="ctx-l3-progress"><div class="st-progress__bar" id="ctx-l3-bar" style="width:0%"></div></div>
         <div class="bar-row"><span>System RAM</span><span class="muted" id="ram-text">&ndash;</span></div>
         <div class="st-progress" id="ram-progress"><div class="st-progress__bar" id="ram-bar" style="width:0%"></div></div>
         <div class="bar-row"><span>GPU temperature (max)</span><span class="muted" id="temp-text">&ndash;</span></div>
         <div class="st-progress" data-tone="warn"><div class="st-progress__bar" id="temp-bar" style="width:0%"></div></div>
       </div>
       <div class="st-card cc-card" id="cc-card">
-        <div class="req-head"><span class="card-title">Conversation cache</span><span class="muted small" id="cc-sum"></span></div>
+        <div class="req-head"><span class="card-title">Conversation cache · FN 5090</span><span class="muted small" id="cc-sum"></span></div>
         <div class="cc-bars" id="cc-bars" hidden>
           <div><div class="bar-row"><span>Parked conversations</span><span class="muted" id="cc-slots-text">&ndash;</span></div>
             <div class="st-progress"><div class="st-progress__bar" id="cc-slots-bar" style="width:0%"></div></div></div>
@@ -905,81 +911,82 @@ function setPill(state, text) {
 }
 
 function render(s) {
-  const live = (s.eng.main || {}).live || {}, eng = live.engine || {}, cache = live.conversation_cache;
-  const sm = ((s.eng.main) || {}).stats || {}, sa = ((s.eng.a) || {}).stats || {}, sb = ((s.eng.b) || {}).stats || {};
-  const names = s.eng_names || {main: {label: "Flash-Next"}, a: {label: "Qwen 27B A"}, b: {label: "Qwen 27B B"}};
-  const engTag = {main: "flash-next", a: "27B A", b: "27B B"};
+  const EIDS = ["main", "l2", "l3"];
+  const names = s.eng_names || {main: {label: "FN 5090"}, l2: {label: "FN 3090 #1"}, l3: {label: "FN 3090 #2"}};
+  const engTag = Object.fromEntries(EIDS.map((e) => [e, (names[e] || {}).label || e]));
+  const LV = Object.fromEntries(EIDS.map((e) => [e, ((s.eng[e] || {}).live || {}).live || {}]));
+  const ST = Object.fromEntries(EIDS.map((e) => [e, ((s.eng[e] || {}).stats) || {}]));
+  const live = LV.main, eng = ((s.eng.main || {}).live || {}).engine || {}, cache = ((s.eng.main || {}).live || {}).conversation_cache;
+  const sm = ST.main;
   const H = RANGE === "live" ? (s.history || []) : (histData || []);
   const VH = RANGE === "live" ? H.slice(-300) : H;   // live: last ~5 min; history ranges come pre-downsampled
   const fill = (arr) => { let last = null; return arr.map((v) => (v == null ? last : (last = v))); };
   const hcol = (k) => VH.map((p) => p[k]);
   const gpus = s.gpus || [], host = s.host || {};
   const reqs = (s.requests || []).slice(-200);
-  const lastMain = reqs.filter((r) => r.eng === "main")[0];
+  const lastOf = (e) => { let x = null; for (const r of reqs) if (r.eng === e && (!x || r.ts > x.ts)) x = r; return x; };
+  const lastMain = lastOf("main");
 
-  // header pill: main state + how many engines are busy
-  let pillText = null;
-  if (live.state === "reading") {
-    const pct = live.prompt_total ? Math.round((100 * live.prompt_read) / live.prompt_total) : null;
-    pillText = pct != null ? `Reading prompt · ${pct}%` : "Reading prompt";
-  } else if (live.state === "generating") {
-    pillText = `Flash-Next · ${fmt(live.tok_s, 1)} tok/s`;
-  }
-  const busy = [];
-  if ((sa.running || 0) > 0) busy.push(`A ${fmt(sa.running)}`);
-  if ((sb.running || 0) > 0) busy.push(`B ${fmt(sb.running)}`);
-  if (busy.length) pillText = `${pillText || (live.state === "idle" ? "Idle" : live.state)} · 27B: ${busy.join(" + ")}`;
-  if (live.queued > 0) setPill("queued", `${live.queued} queued · ${pillText || ""}`);
-  else if (pillText && live.state !== "idle") setPill(live.state, pillText);
-  else setPill("idle", pillText || "Idle");
+  // header pill: the busiest lane first, the other busy lanes appended
+  const act = EIDS.filter((e) => LV[e].state === "reading" || LV[e].state === "generating");
+  const queued = EIDS.reduce((a, e) => a + (LV[e].queued || 0), 0);
+  const laneText = (e) => {
+    const l = LV[e];
+    if (l.state === "reading") {
+      const pct = l.prompt_total ? Math.round((100 * l.prompt_read) / l.prompt_total) : null;
+      return `${engTag[e]} · reading${pct != null ? ` ${pct}%` : ""}`;
+    }
+    return `${engTag[e]} · ${fmt(l.tok_s, 1)} tok/s`;
+  };
+  const pillText = act.map(laneText).join(" · ");
+  if (queued > 0) setPill("queued", `${queued} queued${pillText ? ` · ${pillText}` : ""}`);
+  else if (act.length) setPill(LV[act[0]].state, pillText);
+  else setPill("idle", "Idle");
 
-  // ---- three engine state cards
-  {
-    const on = live.queued > 0 ? "queued" : live.state;
-    for (const b of document.querySelectorAll("#m-badges .st-badge")) b.classList.toggle("on", b.dataset.s === on);
-    const prog = $("m-progress");
+  // ---- three engine state cards (all Strata lanes, same logic)
+  for (const e of EIDS) {
+    const l = LV[e], st = ST[e], lastR = lastOf(e);
+    const on = l.queued > 0 ? "queued" : (l.state || "idle");
+    for (const bd of document.querySelectorAll(`#${e}-badges .st-badge`)) bd.classList.toggle("on", bd.dataset.s === on);
+    const prog = $(`${e}-progress`);
     let label = "Waiting for a request", detail = "", pct = 0;
-    if (live.state === "reading") {
+    if (l.state === "reading") {
       label = "Reading prompt"; prog.dataset.tone = "info";
-      if (live.prompt_total) {
-        pct = (100 * live.prompt_read) / live.prompt_total;
-        detail = `${fmt(live.prompt_read)} / ${fmt(live.prompt_total)} tokens · ${fmt(pct)}%`;
-      } else detail = `${fmt(live.prompt_tokens)} tokens`;
-    } else if (live.state === "generating") {
-      label = live.phase ? live.phase[0].toUpperCase() + live.phase.slice(1) : "Generating";
+      if (l.prompt_total) {
+        pct = (100 * l.prompt_read) / l.prompt_total;
+        detail = `${fmt(l.prompt_read)} / ${fmt(l.prompt_total)} tokens · ${fmt(pct)}%`;
+      } else detail = `${fmt(l.prompt_tokens)} tokens`;
+    } else if (l.state === "generating") {
+      label = l.phase ? l.phase[0].toUpperCase() + l.phase.slice(1) : "Generating";
       delete prog.dataset.tone;
-      pct = live.max_tokens ? Math.min(100, (100 * live.generated) / live.max_tokens) : 0;
-      detail = `${fmt(live.generated)} tokens · ${fmt(live.tok_s, 1)} tok/s · ctx ${fmt(sm.ctx_pct || 0)}%`;
+      pct = l.max_tokens ? Math.min(100, (100 * l.generated) / l.max_tokens) : 0;
+      detail = `${fmt(l.generated)} tokens · ${fmt(l.tok_s, 1)} tok/s · ctx ${fmt(st.ctx_pct || 0)}%`;
     } else {
       delete prog.dataset.tone;
-      detail = lastMain ? `last: ${fmt(lastMain.output)} tokens${lastMain.decode_tps ? ` at ${fmt(lastMain.decode_tps, 1)} tok/s` : ""}`
-                        : `ctx held ${fmt(sm.ctx_pct || 0)}% · prefix reuse ${fmt(sm.prefix_pct)}%`;
+      if (!Object.keys(st).length) label = "Engine not reachable";
+      detail = lastR ? `last: ${fmt(lastR.output)} tokens${lastR.decode_tps ? ` at ${fmt(lastR.decode_tps, 1)} tok/s` : ""}`
+                     : `ctx held ${fmt(st.ctx_pct || 0)}% · prefix reuse ${fmt(st.prefix_pct)}%`;
     }
-    $("m-label").textContent = label;
-    $("m-detail").textContent = detail;
-    $("m-bar").style.width = `${pct}%`;
+    $(`${e}-label`).textContent = label;
+    $(`${e}-detail`).textContent = detail;
+    $(`${e}-bar`).style.width = `${pct}%`;
   }
-  const TPS = {};
-  const HISTK = {
-    "m-dec": "main_tps", "m-pre": "main_prefill_tps",
-    "a-dec": "a_tps", "a-pre": "a_prefill_tps",
-    "b-dec": "b_tps", "b-pre": "b_prefill_tps",
-  };
+  const TPS = window.TPS || (window.TPS = {});
   const ago = (ts) => { const s0 = Math.max(0, Date.now() / 1000 - ts);
     return s0 < 90 ? `${Math.round(s0)}s` : s0 < 5400 ? `${Math.round(s0 / 60)}m` : `${Math.round(s0 / 3600)}h`; };
-  function setTps(id, v) {
+  function setTps(id, hkey, v) {
     const b = TPS[id] || (TPS[id] = {q: [], ts: 0, last: null});
     if (v != null && v > 0) { b.q.push(v); if (b.q.length > 5) b.q.shift(); b.ts = Date.now(); b.last = {v, ts: Date.now() / 1000}; }
     if (Date.now() - b.ts > 10000) b.q = [];
     if (!b.last) {
       const isPre = id.endsWith("-pre");
-      const lim = isPre ? 20000 : Infinity;  // pre-fix garbage values were 40k-90k; real chunk spikes stay under ~10k
+      const lim = isPre ? 20000 : Infinity;  // guard against one counter spike seeding the "last" line
       let idx = -1;
-      for (let i = H.length - 1; i >= 0; i--) { const hv = H[i][HISTK[id]]; if (hv && hv <= lim) { idx = i; break; } }
+      for (let i = H.length - 1; i >= 0; i--) { const hv = H[i][hkey]; if (hv && hv <= lim) { idx = i; break; } }
       if (idx >= 0) {
         let sum = 0, n = 0;
-        for (let i = idx; i >= Math.max(0, idx - 7); i--) {  // prefill arrives in scheduler chunks: average the run, not one spike
-          const hv = H[i][HISTK[id]];
+        for (let i = idx; i >= Math.max(0, idx - 7); i--) {  // average the run of the last busy points, not one sample
+          const hv = H[i][hkey];
           if (!hv || hv > lim) break;
           sum += hv; n++;
         }
@@ -990,18 +997,7 @@ function render(s) {
     const el = $(id + "-last");
     if (el) el.textContent = (!b.q.length && b.last) ? `last ${fmt(b.last.v, 1)} t/s · ${ago(b.last.ts)} ago` : "";
   }
-  setTps("m-dec", sm.decode_tps); setTps("m-pre", sm.prefill_tps);
-  for (const [eid, st] of [["a", sa], ["b", sb]]) {
-    setTps(eid + "-dec", st.decode_tps); setTps(eid + "-pre", st.prefill_tps);
-    const run = st.running || 0, wait = st.waiting || 0;
-    const on = wait > 0 ? "queued" : run > 0 ? "generating" : "idle";
-    for (const b of document.querySelectorAll(`#${eid}-badges .st-badge`)) b.classList.toggle("on", b.dataset.s === on);
-    const prog = $(`${eid}-progress`);
-    $(`${eid}-label`).textContent = run || wait ? `${fmt(run)} running${wait ? ` · ${fmt(wait)} waiting` : ""}` : "Waiting for a request";
-    if (run > 0) prog.dataset.tone = ""; else delete prog.dataset.tone;
-    $(`${eid}-bar`).style.width = `${Math.min(100, st.kv_pct || 0)}%`;
-    $(`${eid}-detail`).textContent = `KV ${fmt(st.kv_pct || 0)}% · pool ${fmt(st.kv_tokens || 0)} tok · ctx ${ctxfmt(st.max_len || 0)}`;
-  }
+  for (const e of EIDS) { setTps(`${e}-dec`, `${e}_tps`, ST[e].decode_tps); setTps(`${e}-pre`, `${e}_prefill_tps`, ST[e].prefill_tps); }
 
   // hardware: one series per GPU everywhere
   const util = gpus.map((g) => g["utilization.gpu"]).filter((v) => v != null);
@@ -1024,32 +1020,27 @@ function render(s) {
   const lastv = (k) => { for (let i = H.length - 1; i >= 0; i--) { const v = H[i][k]; if (v != null) return v; } return null; };
   const xs = VH.map((p) => p.t * 1000);
 
-  // speed: three engines now, each with its own line
-  const decM = live.state === "generating" ? live.tok_s : lastv("main_tps");
-  const decA = sa.decode_tps != null ? sa.decode_tps : lastv("a_tps");
-  const decB = sb.decode_tps != null ? sb.decode_tps : lastv("b_tps");
-  const tot = (decM || 0) + (decA || 0) + (decB || 0);
-  const pfM = live.state !== "idle" && live.prefill_tok_s_mean ? live.prefill_tok_s_mean : lastv("main_prefill_tps");
-  const pfA = sa.prefill_tps != null ? sa.prefill_tps : lastv("a_prefill_tps");
-  const pfB = sb.prefill_tps != null ? sb.prefill_tps : lastv("b_prefill_tps");
-  const totPf = (pfM || 0) + (pfA || 0) + (pfB || 0);
-  setMetric("speed", tot ? fmt(tot, 1) : null, "t/s",
-    `flash ${fmt(decM, 0)} · A ${fmt(decA, 0)} · B ${fmt(decB, 0)}`);
+  // speed: three lanes, each with its own line (decode solid, prefill dashed on the hidden y1 axis)
+  const dec = {}, pf = {};
+  for (const e of EIDS) {
+    dec[e] = ST[e].decode_tps != null ? ST[e].decode_tps : null;
+    pf[e] = ST[e].prefill_tps != null ? ST[e].prefill_tps : null;
+  }
+  const tot = EIDS.reduce((a, e) => a + (dec[e] || 0), 0);
+  const totPf = EIDS.reduce((a, e) => a + (pf[e] || 0), 0);
+  const subOf = (o, d) => EIDS.map((e) => `${engTag[e].replace("FN ", "")} ${fmt(o[e] != null ? o[e] : lastv(e + d), 0)}`).join(" · ");
+  setMetric("speed", tot ? fmt(tot, 1) : null, "t/s", subOf(dec, "_tps"));
   const pfEl = $("mv-prefill");
   if (pfEl) pfEl.innerHTML = totPf ? `${esc(fmt(totPf, 0))}<small>t/s</small>` : "–";
   const pfSub = $("ms-prefill");
-  if (pfSub) pfSub.textContent = `flash ${fmt(pfM, 0)} · A ${fmt(pfA, 0)} · B ${fmt(pfB, 0)}`;
+  if (pfSub) pfSub.textContent = subOf(pf, "_prefill_tps");
   const p99 = (vals, floor) => { const a = vals.filter((x) => x != null && x > 0).sort((x, y) => x - y);
     return a.length ? Math.max(floor, a[Math.min(a.length - 1, Math.floor(a.length * 0.99))] * 1.1) : floor; };
-  const decMax = p99([...hcol("main_tps"), ...hcol("a_tps"), ...hcol("b_tps")], 60);
-  const preMax = p99([...hcol("main_prefill_tps"), ...hcol("a_prefill_tps"), ...hcol("b_prefill_tps")], 200);
+  const decMax = p99(EIDS.flatMap((e) => hcol(e + "_tps")), 60);
+  const preMax = p99(EIDS.flatMap((e) => hcol(e + "_prefill_tps")), 200);
   metricChart("speed", xs, [
-    {label: "flash-next", c: () => SC()[0], values: hcol("main_tps"), unit: " t/s", dec: 1},
-    {label: "27B A", c: () => SC()[1], values: hcol("a_tps"), unit: " t/s", dec: 1},
-    {label: "27B B", c: () => SC()[2], values: hcol("b_tps"), unit: " t/s", dec: 1},
-    {label: "flash prefill", c: () => SC()[0], dash: true, w: 1.2, values: hcol("main_prefill_tps"), unit: " t/s", dec: 0, axis: "y1"},
-    {label: "A prefill", c: () => SC()[1], dash: true, w: 1.2, values: hcol("a_prefill_tps"), unit: " t/s", dec: 0, axis: "y1"},
-    {label: "B prefill", c: () => SC()[2], dash: true, w: 1.2, values: hcol("b_prefill_tps"), unit: " t/s", dec: 0, axis: "y1"},
+    ...EIDS.map((e, i) => ({label: engTag[e], c: () => SC()[i], values: hcol(e + "_tps"), unit: " t/s", dec: 1})),
+    ...EIDS.map((e, i) => ({label: `${engTag[e]} prefill`, c: () => SC()[i], dash: true, w: 1.2, values: hcol(e + "_prefill_tps"), unit: " t/s", dec: 0, axis: "y1"})),
   ], {max: decMax, preMax});
 
   setMetric("gpu", util.length ? fmt(util.reduce((a, b) => a + b, 0) / util.length) : null, "%", "average of all GPUs");
@@ -1134,12 +1125,12 @@ function render(s) {
   const cacheBytes = (eng.expert_cache_mib || 0) * 1048576;
   $("slots-text").textContent = eng.expert_slots ? `${fmt(eng.expert_slots)} · ${gb(cacheBytes)} GB` : "–";
   $("slots-bar").style.width = vramT ? `${Math.min(100, (100 * cacheBytes) / vramT)}%` : "0%";
-  $("skva-text").textContent = `${fmt(sa.kv_pct || 0)}% · ${fmt(sa.kv_tokens || 0)} tok pool`;
-  $("skva-bar").style.width = `${Math.min(100, sa.kv_pct || 0)}%`;
-  if ((sa.kv_pct || 0) > 92) $("skva-progress").dataset.tone = "danger"; else delete $("skva-progress").dataset.tone;
-  $("skvb-text").textContent = `${fmt(sb.kv_pct || 0)}% · ${fmt(sb.kv_tokens || 0)} tok pool`;
-  $("skvb-bar").style.width = `${Math.min(100, sb.kv_pct || 0)}%`;
-  if ((sb.kv_pct || 0) > 92) $("skvb-progress").dataset.tone = "danger"; else delete $("skvb-progress").dataset.tone;
+  for (const e of ["l2", "l3"]) {
+    const st = ST[e], cp = st.ctx_pct || 0;
+    $(`ctx-${e}-text`).textContent = st.ctx_max ? `${fmt(cp)}% of ${ctxfmt(st.ctx_max)} held` : "–";
+    $(`ctx-${e}-bar`).style.width = `${Math.min(100, cp)}%`;
+    if (cp > 92) $(`ctx-${e}-progress`).dataset.tone = "danger"; else delete $(`ctx-${e}-progress`).dataset.tone;
+  }
   $("ram-text").textContent = host.mem_total ? `${gb(host.mem_total - host.mem_available)} / ${gb(host.mem_total, 0)} GB` : "–";
   const ramPct = host.mem_total ? (100 * (host.mem_total - host.mem_available)) / host.mem_total : 0;
   $("ram-bar").style.width = `${ramPct}%`;
@@ -1150,8 +1141,8 @@ function render(s) {
 
   // requests: all three engines, newest first, model chips color-coded, filterable
   const body = $("req-body");
-  const mCls = {main: "m-main", a: "m-a", b: "m-b"};
-  let rows = reqs.map((r) => ({t: r.ts, eng: r.eng, badge: r.eng === "main" ? r.status : (r.status === 200 ? "stop" : String(r.status)),
+  const mCls = {main: "m-main", l2: "m-l2", l3: "m-l3"};
+  let rows = reqs.map((r) => ({t: r.ts, eng: r.eng, badge: r.status,
     prompt: r.prompt, reused: r.reused, out: r.output, pre: r.prefill_tps, dec: r.decode_tps,
     hit: r.hit, dur: r.dur, approx: r.approx, n: r.n, client: r.client})).sort((a, b) => (b.t || 0) - (a.t || 0));
   if (REQF !== "all") rows = rows.filter((r) => r.eng === REQF);
@@ -1180,29 +1171,19 @@ function render(s) {
   $("updated").textContent = new Date((s.updated || Date.now() / 1000) * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
 
   // engine details: one column per engine
-  const factCols = [
-    ["Flash-Next · Strata", [
-      ["Decode mean", sm._c && sm._c.dec_s > 1 ? `${fmt(sm._c.gen / sm._c.dec_s, 1)} t/s since start` : null],
-      ["Prefix reuse", sm.prefix_pct != null ? `${fmt(sm.prefix_pct)}%` : null],
-      ["Requests", sm.requests != null ? fmt(sm.requests) : null],
-    ]],
-    ["Qwen 27B A · :18020", [
-      ["TTFT mean", sa.ttft ? `${fmt(sa.ttft, 2)} s` : null],
-      ["MTP", sa.mtp_len ? `draft ${fmt(sa.mtp_len, 1)} tok · accept ${fmt(sa.mtp_pct)}%` : null],
-      ["Prefix reuse", sa.prefix_pct != null ? `${fmt(sa.prefix_pct)}%` : null],
-      ["KV pool", sa.kv_tokens ? `${fmt(sa.kv_tokens)} tok (${ctxfmt(sa.max_len)} ctx)` : null],
-      ["Avg req", sa.avg_prompt ? `${fmt(sa.avg_prompt)} in / ${fmt(sa.avg_out)} out` : null],
-      ["Requests", sa.requests != null ? fmt(sa.requests) : null],
-    ]],
-    ["Qwen 27B B · :18021", [
-      ["TTFT mean", sb.ttft ? `${fmt(sb.ttft, 2)} s` : null],
-      ["MTP", sb.mtp_len ? `draft ${fmt(sb.mtp_len, 1)} tok · accept ${fmt(sb.mtp_pct)}%` : null],
-      ["Prefix reuse", sb.prefix_pct != null ? `${fmt(sb.prefix_pct)}%` : null],
-      ["KV pool", sb.kv_tokens ? `${fmt(sb.kv_tokens)} tok (${ctxfmt(sb.max_len)} ctx)` : null],
-      ["Avg req", sb.avg_prompt ? `${fmt(sb.avg_prompt)} in / ${fmt(sb.avg_out)} out` : null],
-      ["Requests", sb.requests != null ? fmt(sb.requests) : null],
-    ]],
-  ];
+  const factCols = EIDS.map((e) => {
+    const st = ST[e];
+    return [`${engTag[e]} · ${((names[e] || {}).sub || "").split(" · ")[0]}`, [
+      ["Decode mean", st._c && st._c.dec_s > 1 ? `${fmt(st._c.gen / st._c.dec_s, 1)} t/s since start` : null],
+      ["Prefill mean", st._c && st._c.pre_s > 1 ? `${fmt((st._c.prompt - st._c.reused) / st._c.pre_s, 0)} t/s since start` : null],
+      ["Prefix reuse", st.prefix_pct != null ? `${fmt(st.prefix_pct)}%` : null],
+      ["MTP accepted", st.mtp_pct != null ? `${fmt(st.mtp_pct)}% of drafts` : null],
+      ["Context", st.ctx_max ? `${ctxfmt(st.ctx_max)} · ${fmt(st.ctx_pct || 0)}% held` : null],
+      ["Experts in VRAM", st.expert_slots ? `${fmt(st.expert_slots)} · ${gb((st.expert_cache_mib || 0) * 1048576)} GB` : null],
+      ["Requests", st.requests != null ? fmt(st.requests) : null],
+      ["Service", (s.services || {})[e] || null],
+    ]];
+  });
   $("eng-facts").innerHTML = factCols.map(([title, rows]) =>
     `<div><div class="bar-row"><span>${esc(title)}</span></div><dl class="facts">${
       rows.filter((r) => r[1] != null).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")
@@ -1238,11 +1219,11 @@ async function loadSummary() {
   }
   try {
     const s = await (await fetch(url)).json();
-    const names = {main: "Flash-Next", a: "Qwen 27B A", b: "Qwen 27B B"};
+    const names = {main: "FN 5090", l2: "FN 3090 #1", l3: "FN 3090 #2"};
     $("sum-span").textContent = fmtSpan(s.from, s.to);
-    $("sum-body").innerHTML = ["main", "a", "b"].map((e) => {
+    $("sum-body").innerHTML = ["main", "l2", "l3"].map((e) => {
       const x = s.engines[e] || {};
-      return `<tr><td>${names[e]}</td><td class="num">${fmt(x.requests)}</td>
+      return `<tr class="m-${e}"><td><span class="req-src m-${e}">${names[e]}</span></td><td class="num">${fmt(x.requests)}</td>
         <td class="num">${fmt(x.computed)}${x.reused ? ` <span class="muted">+${kfmt(x.reused)}</span>` : ""}</td>
         <td class="num">${fmt(x.output)}</td>
         <td class="num">${fmt(x.prefill_tps)}</td><td class="num">${fmt(x.decode_tps, 1)}</td>

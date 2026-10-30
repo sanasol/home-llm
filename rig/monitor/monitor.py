@@ -1,20 +1,21 @@
-"""Rig monitor: one page for the whole box — Strata main (:8001) + two HyperQwen
-engines (:18020 A, :18021 B — identical profile, both vLLM 0.32), all three GPUs and the host.
+"""Rig monitor: one page for the whole box — three Strata lanes of Qwen3.8-Flash-Next
+(main :8001 on the RTX 5090, lane2 :8003 on 3090 idx 1, lane3 :8004 on 3090 idx 2;
+docs/23), all three GPUs and the host.
 
-Samples Strata /metrics (JSON), both vLLM /metrics (Prometheus), nvidia-smi (+ dmon
--s t for real PCIe Rx/Tx MB/s), /proc, hwmon and the journald access logs of both
-HyperQwen units. Every point is persisted to SQLite (hist.db): 1s resolution kept
-for 24h, 1-minute rollups for 7 days; finished request rows kept for 7 days too.
-Restarting the monitor backfills the live charts from the DB.
+Samples every lane's Strata /metrics?requests=all (JSON, one shared API key), nvidia-smi
+(+ dmon -s t for real PCIe Rx/Tx MB/s), /proc and hwmon. Every point is persisted to
+SQLite (hist.db): 1s resolution kept for 24h, 1-minute rollups for 30 days; finished
+request rows kept for 30 days too. Restarting the monitor backfills the live charts.
 
-API:  /api/state   live gauges + history ring (RAM) + recent requests
-      /api/history?range=1h|24h|7d | ?from=T&to=T   persisted points downsampled
-      /api/summary?range=... | ?from=T&to=T         per-engine totals over a window
+API:  /api/state   live gauges + history ring (RAM) + recent requests (one merged list, eng field)
+      /api/history?range=1h|24h|7d|30d | ?from=T&to=T   persisted points downsampled
+      /api/summary?range=... | ?from=T&to=T            per-engine totals over a window
+      /api/hw?range=...                                hardware snapshots
       /, /hw  pages (index.html / hw.html read per request)
 
-Env: STRATA_URL, STRATA_KEY (JSON with api_key), A_URL, B_URL, VLLM_ENV (KEY=VAL
-file with VLLM_API_KEY, shared by both HyperQwen), A_UNIT, B_UNIT, HIST_DB, PORT,
-PROM_URL (Prometheus with the rig:power_* / rig:electricity_* recording rules, docs/14).
+Env: STRATA_URL (main), L2_URL, L3_URL, STRATA_KEY (JSON with api_key, shared by all lanes),
+MAIN_UNIT, L2_UNIT, L3_UNIT, HIST_DB, PORT, PROM_URL (Prometheus with the rig:power_* /
+rig:electricity_* recording rules, docs/14).
 """
 import json, os, re, sqlite3, subprocess, threading, time
 from collections import deque
@@ -23,14 +24,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 
+
 STRATA = os.environ.get("STRATA_URL", "http://127.0.0.1:8001")
 STRATA_KEY_FILE = os.path.expanduser(os.environ.get("STRATA_KEY", "~/.config/strata/launch-presets/main.json"))
-A_URL = os.environ.get("A_URL", "http://127.0.0.1:18020")
-B_URL = os.environ.get("B_URL", "http://127.0.0.1:18021")
-VLLM_ENV = os.environ.get("VLLM_ENV", "/opt/rig/side.env")
-A_UNIT = os.environ.get("A_UNIT", "hyperqwen-a")
-B_UNIT = os.environ.get("B_UNIT", "hyperqwen-b")
+L2_URL = os.environ.get("L2_URL", "http://127.0.0.1:8003")
+L3_URL = os.environ.get("L3_URL", "http://127.0.0.1:8004")
 MAIN_UNIT = os.environ.get("MAIN_UNIT", "llm-main")
+L2_UNIT = os.environ.get("L2_UNIT", "llm-lane2")
+L3_UNIT = os.environ.get("L3_UNIT", "llm-lane3")
 PORT = int(os.environ.get("PORT", "8090"))
 PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 HIST_DB = os.environ.get("HIST_DB", str(Path(__file__).with_name("hist.db")))
@@ -40,24 +41,23 @@ KEEP1 = 86400         # 1s points: 24h
 KEEP60 = 30 * 86400   # rollups + request rows: 30 days
 PAGE = Path(__file__).with_name("index.html")
 
-# engine table: the page and the request rows label by these keys
-ENG = {"main": {"label": "Flash-Next", "sub": "Strata :8001 · RTX 5090"},
-       "a": {"label": "Qwen 27B A", "sub": "HyperQwen :18020 · 3090 #1 · speed"},
-       "b": {"label": "Qwen 27B B", "sub": "HyperQwen :18021 · 3090 #2 · 150K · clone of A"}}
+# engine table: the page and the request rows label by these keys (all three are Strata lanes)
+ENG = {"main": {"label": "FN 5090", "sub": "Strata :8001 · RTX 5090 · 256K"},
+       "l2": {"label": "FN 3090 #1", "sub": "Strata :8003 · RTX 3090 (idx 1) · 128K"},
+       "l3": {"label": "FN 3090 #2", "sub": "Strata :8004 · RTX 3090 (idx 2) · 128K"}}
+LANES = {"main": (STRATA, MAIN_UNIT), "l2": (L2_URL, L2_UNIT), "l3": (L3_URL, L3_UNIT)}
+CKEY = {"main": "m", "l2": "l2", "l3": "l3"}   # key in point["counters"] (main stays "m": history continuity)
 
 history = deque(maxlen=HISTORY)
 _last_gs = []
 state = {"eng": {k: {"stats": {}} for k in ENG}, "gpus": [], "host": {}, "services": {},
-         "requests": [], "clients": [], "updated": 0}
+         "requests": [], "updated": 0}
 lock = threading.Lock()
 
 GPU_FIELDS = ["index", "name", "uuid", "utilization.gpu", "memory.used", "memory.total",
               "temperature.gpu", "power.draw", "power.limit", "fan.speed",
               "pcie.link.gen.current", "pcie.link.width.current"]
-METRIC_RE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?([^}]*)\}?\s+(\S+)$')
-ACCESS_RE = re.compile(r'"(?P<method>[A-Z]+) (?P<path>\S+) HTTP/[^"]*"\s+(?P<status>\d{3})\b')
-CLIENT_RE = re.compile(r'(?P<ip>[\w.]+):\d+ - ')
-CHAT_PATHS = ("/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/completions")
+
 
 DB_LOCK = threading.Lock()
 
@@ -112,52 +112,11 @@ def key_from_json(path):
         return ""
 
 
-def key_from_env(path):
-    try:
-        for line in open(path):
-            k, _, v = line.partition("=")
-            if k.strip() == "VLLM_API_KEY":
-                return v.strip().strip('"').strip("'")
-    except OSError:
-        pass
-    return ""
-
-
 def http_json(url, key=None, params=None):
     if params:
         url = url + "?" + params
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     return json.load(urlopen(Request(url, headers=headers), timeout=3))
-
-
-def scrape(url, key):
-    req = Request(url + "/metrics", headers={"Authorization": f"Bearer {key}"} if key else {})
-    out = {}
-    for line in urlopen(req, timeout=3).read().decode().splitlines():
-        m = METRIC_RE.match(line)
-        if m and "le=" not in (m.group(2) or ""):  # skip histogram buckets
-            out[m.group(1) + ("{" + m.group(2) + "}" if m.group(2) else "")] = float(m.group(3))
-    return out
-
-
-def getp(m, prefix, suffix=""):
-    """Sum of values whose bare metric name (no labels) starts with prefix and ends with suffix."""
-    v = None
-    for k, val in m.items():
-        bare = k.split("{")[0]
-        if bare.startswith(prefix) and bare.endswith(suffix):
-            v = (v or 0) + val
-    return v
-
-
-def getx(m, name):
-    """Exact bare metric name (HyperQwen adds *_by_source_total / *_cached_total variants
-    that a prefix match would double-count)."""
-    v = None
-    for k, val in m.items():
-        if k.split("{")[0] == name:
-            v = (v or 0) + val
-    return v
 
 
 def gpus():
@@ -353,238 +312,70 @@ def host():
             "threads": os.cpu_count(), "cpu_name": cpu_name()}
 
 
-# ------------------------------------------------------------- vLLM engines (A and B)
-HIST_KEYS = {"n": "vllm:e2e_request_latency_seconds", "prompt": "vllm:request_prompt_tokens",
-             "out": "vllm:request_generation_tokens", "prefill": "vllm:request_prefill_time_seconds",
-             "decode": "vllm:request_decode_time_seconds", "ttft": "vllm:time_to_first_token"}
+# ------------------------------------------------------------- Strata lanes (main, l2, l3)
+def strata_stats(j):
+    """Engine stats from one Strata /metrics JSON (same shape for every lane)."""
+    live = j.get("live", {}) or {}
+    tot = j.get("totals", {}) or {}
+    eng = j.get("engine", {}) or {}
+    ctx_max = float(eng.get("max_context") or 0)
+    held = max([s.get("held_tokens", 0) or 0 for s in live.get("slots", []) or []] or [0])
+    off, acc = tot.get("drafts_offered"), tot.get("drafts_accepted")
+    return {"running": live.get("running"), "state": live.get("state"), "queued": live.get("queued"),
+            "decode_tps": live.get("tok_s") if isinstance(live.get("tok_s"), (int, float)) else None,
+            "prefill_tps": live.get("prefill_tok_s_mean") if isinstance(live.get("prefill_tok_s_mean"), (int, float)) else None,
+            "ctx_pct": round(100 * held / ctx_max, 1) if ctx_max else None,
+            "ctx_max": ctx_max or None,
+            "prefix_pct": round(100 * tot.get("reused", 0) / tot["prompt_tokens"], 1) if tot.get("prompt_tokens") else None,
+            "mtp_pct": round(100 * acc / off, 1) if off and acc is not None else None,
+            "requests": tot.get("requests"),
+            "expert_slots": eng.get("expert_slots"), "expert_cache_mib": eng.get("expert_cache_mib"),
+            "_c": {"req": tot.get("requests", 0), "prompt": tot.get("prompt_tokens", 0),
+                   "reused": tot.get("reused", 0), "gen": tot.get("output_tokens", 0),
+                   "pre_s": tot.get("prompt_ms", 0) / 1000, "dec_s": tot.get("decode_ms", 0) / 1000}}
 
 
-class VllmLog:
-    """Access rows + histogram attribution for ONE vLLM unit (mirrors the old side_* globals)."""
-
-    def __init__(self, unit):
-        self.unit = unit
-        self.rows = []
-        self.cursors = set()
-        self.hist_prev = None
-        self.base_ts = 0.0
-        self.acc = None
-        self.acc_t = 0.0
-        self.acc_end = 0.0
-        self.hist_t = 0.0
-
-    def access_rows(self, window=300):
-        r = subprocess.run(["journalctl", "-u", self.unit, "-b", "-o", "json", "-n", str(window), "--no-pager"],
-                           capture_output=True, text=True, timeout=10)
-        out = []
-        for line in r.stdout.splitlines():
-            try:
-                j = json.loads(line)
-            except ValueError:
-                continue
-            cur, msg = j.get("__CURSOR"), j.get("MESSAGE")
-            if not cur or not isinstance(msg, str):
-                continue
-            a = ACCESS_RE.search(msg)
-            c = CLIENT_RE.search(msg)
-            if not a or not c:
-                continue
-            path = a.group("path").split("?")[0]
-            if a.group("method") != "POST" or not path.startswith(CHAT_PATHS):
-                continue
-            if cur in self.cursors:
-                continue
-            self.cursors.add(cur)
-            out.append({"ts": int(j["__REALTIME_TIMESTAMP"]) / 1e6, "path": path,
-                        "status": int(a.group("status")), "client": c.group("ip"),
-                        "prompt": None, "output": None, "dur": None, "ttft": None,
-                        "prefill_tps": None, "decode_tps": None, "approx": False, "n": 1,
-                        "saved": False})
-        out.sort(key=lambda x: x["ts"])
-        return out
-
-    def hist(self, m):
-        return {tag: (getp(m, name, "_sum"), getp(m, name, "_count")) for tag, name in HIST_KEYS.items()}
-
-    def attribute(self, hist):
-        if not hist:
-            return
-        now = time.time()
-        if self.hist_prev is None:
-            self.hist_prev, self.base_ts, self.hist_t = hist, now, now
-            return
-        prev = self.hist_prev
-
-        def delta(tag):
-            s1, c1 = hist[tag]
-            s0, c0 = prev[tag]
-            if None in (s1, c1, s0, c0):
-                return 0.0, 0
-            return max(0.0, s1 - s0), max(0, int(round(c1 - c0)))
-
-        if hist["n"][1] is not None and prev["n"][1] is not None and hist["n"][1] < prev["n"][1]:
-            self.hist_prev, self.base_ts, self.acc = hist, now, None
-            self.hist_t = now
-            return
-        w_start, w_end = self.hist_t, now
-        self.hist_t = now
-
-        n_new = delta("n")[1]
-        if n_new > 0:
-            if self.acc is None:
-                self.acc = {tag: [0.0, 0] for tag in HIST_KEYS}
-                self.acc_t, self.acc_end = w_start, w_end
-            else:
-                self.acc_t = min(self.acc_t, w_start)
-                self.acc_end = max(self.acc_end, w_end)
-            for tag in HIST_KEYS:
-                d_s, d_c = delta(tag)
-                self.acc[tag][0] += d_s
-                self.acc[tag][1] += d_c
-        self.hist_prev = hist
-
-        if self.acc is None:
-            return
-        n = self.acc["n"][1]
-        if n <= 0:
-            return
-        if now - self.acc_end > 900:
-            self.acc = None
-            return
-        pend = sorted((r for r in self.rows if r["prompt"] is None and r["status"] == 200
-                       and self.acc_t - 5 <= (r["ts"] or 0) <= self.acc_end + 15), key=lambda r: r["ts"] or 0)
-        k = min(n, len(pend))
-        if not k:
-            return
-        s = {tag: self.acc[tag][0] for tag in HIST_KEYS}
-        per = lambda tag: s[tag] / n
-        for r in pend[:k]:
-            r["prompt"] = round(per("prompt"))
-            r["output"] = round(per("out"))
-            r["dur"] = round(per("n"), 1)
-            if s["ttft"]:
-                r["ttft"] = round(per("ttft"), 2)
-            if s["prefill"] > 0:
-                r["prefill_tps"] = round(per("prompt") / per("prefill"))
-            if s["decode"] > 0:
-                r["decode_tps"] = round(per("out") / per("decode"))
-            r["n"] = n
-            r["approx"] = n > 1
-        for tag in HIST_KEYS:
-            self.acc[tag][0] -= s[tag] * k / n
-            self.acc[tag][1] -= k
-        if self.acc["n"][1] <= 0:
-            self.acc = None
-
-    def persist(self, eng):
-        for r in self.rows:
-            if r["prompt"] is not None and not r["saved"]:
-                r["saved"] = True
-                db_insert_req(r["ts"], eng, r)
-
-    def clients(self):
-        clients = {}
-        for row in self.rows:
-            cl = clients.setdefault(row["client"], {"n": 0, "last": row["ts"]})
-            cl["n"] += 1
-            cl["last"] = max(cl["last"], row["ts"])
-        cl = [{"client": k, **v} for k, v in clients.items()]
-        cl.sort(key=lambda x: -x["last"])
-        return cl[:10]
-
-
-def vllm_derived(m, prev, prev_t):
-    d = {}
-    d["running"] = getp(m, "vllm:num_requests_running")
-    d["waiting"] = getp(m, "vllm:num_requests_waiting")
-    kv = getp(m, "vllm:kv_cache_usage_perc")
-    d["kv_pct"] = round(100 * kv, 1) if kv is not None else None
-    q, h = getp(m, "vllm:prefix_cache_queries_total"), getp(m, "vllm:prefix_cache_hits_total")
-    d["prefix_pct"] = round(100 * h / q, 1) if q and h is not None else None
-    dq, ac = getp(m, "vllm:spec_decode_num_draft_tokens_total"), getp(m, "vllm:spec_decode_num_accepted_tokens_total")
-    d["mtp_pct"] = round(100 * ac / dq, 1) if dq and ac is not None else None
-    nst = getp(m, "vllm:spec_decode_num_drafts_total")
-    d["mtp_len"] = round(1 + (ac / nst), 2) if nst and ac is not None else None
-    d["preempts"] = getp(m, "vllm:num_preemptions_total")
-    n = getp(m, "vllm:request_success_total")
-    tsu, tc = getp(m, "vllm:time_to_first_token", "_sum"), getp(m, "vllm:time_to_first_token", "_count")
-    d["ttft"] = round(tsu / tc, 2) if tc and tsu is not None else None
-    ps, pc = getp(m, "vllm:request_prompt_tokens", "_sum"), getp(m, "vllm:request_prompt_tokens", "_count")
-    d["avg_prompt"] = round(ps / pc) if pc and ps is not None else None
-    gs, gc = getp(m, "vllm:request_generation_tokens", "_sum"), getp(m, "vllm:request_generation_tokens", "_count")
-    d["avg_out"] = round(gs / gc) if gc and gs is not None else None
-    d["requests"] = n
-    # counters for the persisted summary (exact names: prefix matching double-counts
-    # vllm:prompt_tokens_by_source_total / _cached_total on HyperQwen)
-    d["_c"] = {"req": n or 0,
-               "prompt": getx(m, "vllm:prompt_tokens_total") or 0,
-               "reused": getx(m, "vllm:prompt_tokens_cached_total") or 0,
-               "gen": getx(m, "vllm:generation_tokens_total") or 0,
-               "pre_s": getp(m, "vllm:request_prefill_time_seconds", "_sum") or 0,
-               "dec_s": getp(m, "vllm:request_decode_time_seconds", "_sum") or 0}
-    if prev and prev_t:
-        dt = time.time() - prev_t
-        if dt > 0:
-            def delta(name, want=None):
-                def val(mm):
-                    tot = None
-                    for k, x in mm.items():
-                        bare, rest = k.split("{", 1) if "{" in k else (k, "")
-                        if bare != name or (want and want not in rest):
-                            continue
-                        tot = (tot or 0) + x
-                    return tot
-                a, b = val(m), val(prev)
-                return round(max(0.0, a - b) / dt, 1) if a is not None and b is not None else None
-            # real compute only: prompt_tokens_total also counts cache-hit tokens -> absurd spikes
-            d["prefill_tps"] = delta("vllm:prompt_tokens_by_source_total", 'source="local_compute"')
-            d["decode_tps"] = delta("vllm:generation_tokens_total")
-    return d
-
-
-_info_cache = {}  # unit -> (t, data); startup facts, refresh is rare
-
-
-def engine_info(unit):
-    hit = _info_cache.get(unit)
-    if hit and time.time() - hit[0] < 1800:
-        return hit[1]
-    r = subprocess.run(["journalctl", "-u", unit, "-b", "-o", "cat", "--no-pager",
-                        "-g", "GPU KV cache size"], capture_output=True, text=True, timeout=60)
-    out = {}
-    for line in r.stdout.splitlines():
-        k = re.search(r"GPU KV cache size: ([\d,]+) tokens", line)
-        if k:
-            out["kv_tokens"] = int(k.group(1).replace(",", ""))
-        m = re.search(r"Maximum concurrency for ([\d,]+) tokens", line)
-        if m:
-            out["max_len"] = int(m.group(1).replace(",", ""))
-    if out:
-        _info_cache[unit] = (time.time(), out)
-    return out or (hit[1] if hit else {})
+def strata_rows(j, eid):
+    """Request rows of one lane, oldest first (Strata lists requests[] NEWEST-first)."""
+    rows = []
+    for r in sorted((j or {}).get("requests", []) or [], key=lambda x: float(x.get("time") or 0)):
+        prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
+        rows.append({"ts": float(r.get("time") or 0), "eng": eid, "status": r.get("finish"),
+                     "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
+                     "output": r.get("output_tokens"), "prefill_tps": prefill,
+                     "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
+                     "hit": r.get("hit_rate")})
+    return rows
 
 
 def service_state(unit):
     return subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True).stdout.strip()
 
 
-LOGS = {"a": VllmLog(A_UNIT), "b": VllmLog(B_UNIT)}
-_main_req_ts = 0.0   # persist Strata rows newer than this
+def _req_seed():
+    """Newest persisted request ts per engine, so a monitor restart does not re-insert rows."""
+    out = {k: 0.0 for k in ENG}
+    try:
+        with DB_LOCK, db() as con:
+            for eng, t in con.execute("SELECT eng, MAX(t) FROM reqs GROUP BY eng").fetchall():
+                if eng in out and t:
+                    out[eng] = float(t)
+    except sqlite3.Error:
+        pass
+    return out
+
+
+_req_ts = {k: 0.0 for k in ENG}   # persist rows newer than this, per engine
 
 
 def sample(prev, prev_t, tick):
-    global _last_gs, _main_req_ts
+    global _last_gs
     t = time.time()
-    main = None
+    key = key_from_json(STRATA_KEY_FILE)
     raws = {}
-    try:
-        main = http_json(STRATA + "/metrics", key_from_json(STRATA_KEY_FILE), "requests=all")
-    except Exception:
-        pass
-    vkey = key_from_env(VLLM_ENV)
-    for eid, url in (("a", A_URL), ("b", B_URL)):
+    for eid, (url, _unit) in LANES.items():
         try:
-            raws[eid] = scrape(url, vkey)
+            raws[eid] = http_json(url + "/metrics", key, "requests=all")
         except Exception:
             raws[eid] = None
     g = []
@@ -602,30 +393,7 @@ def sample(prev, prev_t, tick):
     except Exception:
         hw = state.get("hw", [])
 
-    mlive = (main or {}).get("live", {})
-    mr = (main or {}).get("requests", [])
-    mtot = (main or {}).get("totals", {})
-    ctx_max = float((main or {}).get("engine", {}).get("max_context") or 0)
-    held = max([s.get("held_tokens", 0) for s in mlive.get("slots", [])] or [0])
-
-    stats = {"main": {}}
-    if main:
-        st = {"running": mlive.get("running"), "state": mlive.get("state"),
-              "decode_tps": mlive.get("tok_s") if isinstance(mlive.get("tok_s"), (int, float)) else None,
-              "prefill_tps": mlive.get("prefill_tok_s_mean"),
-              "ctx_pct": round(100 * held / ctx_max, 1) if ctx_max else None,
-              "ctx_max": ctx_max or None,
-              "prefix_pct": round(100 * mtot.get("reused", 0) / mtot["prompt_tokens"], 1) if mtot.get("prompt_tokens") else None,
-              "ttft": None, "requests": mtot.get("requests"),
-              "avg_prompt": None, "avg_out": None, "kv_pct": None,
-              "_c": {"req": mtot.get("requests", 0), "prompt": mtot.get("prompt_tokens", 0),
-                     "reused": mtot.get("reused", 0), "gen": mtot.get("output_tokens", 0),
-                     "pre_s": mtot.get("prompt_ms", 0) / 1000, "dec_s": mtot.get("decode_ms", 0) / 1000}}
-        stats["main"] = st
-    for eid in ("a", "b"):
-        d = vllm_derived(raws[eid], prev.get(eid), prev_t) if raws[eid] else {}
-        d.update(_info_cache.get(log_unit(eid), (0, {}))[1])  # cached by the info_refresher thread
-        stats[eid] = d
+    stats = {eid: (strata_stats(raws[eid]) if raws[eid] else {}) for eid in ENG}
 
     last_pt = history[-1] if history else {}
     def livev(eid, key, hkey):
@@ -641,18 +409,13 @@ def sample(prev, prev_t, tick):
              "gpu_temp": max(temps) if temps else None,
              "gpu_power": round(sum(x["power.draw"] or 0 for x in g), 0) if g else None,
              "vram_gib": round(sum(x["memory.used"] or 0 for x in g) / 1024, 1) if g else None,
-             "cpu_pct": c["cpu_pct"], "disk_r_mbps": c["disk_r_mbps"], "disk_w_mbps": c["disk_w_mbps"],
-             "main_tps": livev("main", "decode_tps", "main_tps"),
-             "main_prefill_tps": stats["main"].get("prefill_tps") or last_pt.get("main_prefill_tps"),
-             "main_running": stats["main"].get("running"),
-             "main_ctx_pct": stats["main"].get("ctx_pct"),
-             "a_tps": livev("a", "decode_tps", "a_tps"), "a_prefill_tps": stats["a"].get("prefill_tps"),
-             "a_running": stats["a"].get("running"), "a_waiting": stats["a"].get("waiting"),
-             "a_kv_pct": stats["a"].get("kv_pct"),
-             "b_tps": livev("b", "decode_tps", "b_tps"), "b_prefill_tps": stats["b"].get("prefill_tps"),
-             "b_running": stats["b"].get("running"), "b_waiting": stats["b"].get("waiting"),
-             "b_kv_pct": stats["b"].get("kv_pct")}
-    point["counters"] = {"m": stats["main"].get("_c"), "a": stats["a"].get("_c"), "b": stats["b"].get("_c")}
+             "cpu_pct": c["cpu_pct"], "disk_r_mbps": c["disk_r_mbps"], "disk_w_mbps": c["disk_w_mbps"]}
+    for eid in ENG:
+        point[eid + "_tps"] = livev(eid, "decode_tps", eid + "_tps")
+        point[eid + "_prefill_tps"] = livev(eid, "prefill_tps", eid + "_prefill_tps")
+        point[eid + "_running"] = stats[eid].get("running")
+        point[eid + "_ctx_pct"] = stats[eid].get("ctx_pct")
+    point["counters"] = {CKEY[eid]: stats[eid].get("_c") for eid in ENG}
     gs = sorted(g, key=lambda x: x.get("index") or 0) if g else _last_gs
     if gs:
         _last_gs = gs
@@ -668,58 +431,42 @@ def sample(prev, prev_t, tick):
     if en.get("psu_k") and t - en.get("t", 0) < 60 and point.get("gpu_power_by"):
         point["sys_power"] = round((sum(point["gpu_power_by"]) + (en["cpu_w"] or 0) + (en["other_w"] or 0)) * en["psu_k"], 0)
 
-    # request rows
-    for eid, log in LOGS.items():
-        try:
-            log.rows.extend(log.access_rows(window=300))
-            if len(log.rows) > 400:
-                del log.rows[:-400]
-        except Exception:
-            pass
-        log.attribute(log.hist(raws[eid]) if raws[eid] else None)
-        log.persist(eid)
     svc = None
     if tick % 5 == 0:
-        svc = {"main": service_state(MAIN_UNIT), "a": service_state(A_UNIT), "b": service_state(B_UNIT)}
+        svc = {eid: service_state(unit) for eid, (_url, unit) in LANES.items()}
+
+    rows = []
+    for eid in ENG:
+        if not raws[eid]:
+            continue
+        for r in strata_rows(raws[eid], eid):
+            rows.append(r)
+            if r["ts"] > _req_ts[eid]:
+                _req_ts[eid] = r["ts"]
+                db_insert_req(r["ts"], eid, {k: r[k] for k in ("ts", "status", "prompt", "reused", "output",
+                                                               "dur", "decode_tps", "prefill_tps")})
 
     with lock:
         history.append(point)
-        state["eng"] = {"main": {"live": main or state["eng"]["main"].get("live"), "stats": stats["main"] or state["eng"]["main"]["stats"]},
-                        "a": {"stats": stats["a"] or state["eng"]["a"]["stats"]},
-                        "b": {"stats": stats["b"] or state["eng"]["b"]["stats"]}}
+        state["eng"] = {eid: {"live": raws[eid] or state["eng"][eid].get("live"),
+                              "stats": stats[eid] or state["eng"][eid]["stats"]} for eid in ENG}
         state["host"] = h
         state["hw"] = hw
         state["energy"] = _energy
         state["updated"] = t
         if g:
             state["gpus"] = g
-        rows = []
-        for r in mr:
-            prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
-            rows.append({"ts": float(r.get("time") or 0), "eng": "main", "status": r.get("finish"),
-                         "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
-                         "output": r.get("output_tokens"), "prefill_tps": prefill,
-                         "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
-                         "hit": r.get("hit_rate")})
-            if r.get("time") and r["time"] > _main_req_ts:
-                _main_req_ts = r["time"]
-                db_insert_req(r["time"], "main", {"ts": r["time"], "status": r.get("finish"),
-                                                  "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
-                                                  "output": r.get("output_tokens"), "dur": r.get("duration_s"),
-                                                  "decode_tps": r.get("decode_tok_s")})
-        srows = []
-        for eid, log in LOGS.items():
-            for r in log.rows:
-                if (r["ts"] or 0) >= log.base_ts:
-                    srows.append({**r, "eng": eid})
-        state["requests"] = sorted(rows + srows, key=lambda r: r["ts"] or 0)  # chronological; page sorts newest-first
-        state["clients"] = [{"eng": e, **cl} for e, log in LOGS.items() for cl in log.clients()][:12]
+        if rows or not state["requests"]:
+            # keep the last known rows of a lane that missed one scrape
+            seen = {r["eng"] for r in rows}
+            keep = [r for r in state["requests"] if r["eng"] not in seen and raws.get(r["eng"]) is None]
+            state["requests"] = sorted(rows + keep, key=lambda r: r["ts"] or 0)  # chronological; page sorts newest-first
         if svc:
             state["services"] = svc
     db_insert("hist1", t, point)
     if tick % ROLL_S == 0:
         rollup_and_prune()
-    return {eid: raws[eid] for eid in ("a", "b")}, t
+    return {}, t
 
 
 def rollup_and_prune():
@@ -752,10 +499,10 @@ def rollup_and_prune():
             r = {"t": round(now / ROLL_S) * ROLL_S, "n": len(pts),
                  "cpu_pct": avg("cpu_pct"), "disk_r_mbps": avg("disk_r_mbps"), "disk_w_mbps": avg("disk_w_mbps"),
                  "gpu_util": avg("gpu_util"), "gpu_temp": avg("gpu_temp"), "gpu_power": avg("gpu_power"),
-                 "sys_power": avg("sys_power"), "vram_gib": avg("vram_gib"),
-                 "main_tps": avg("main_tps"), "main_prefill_tps": avg("main_prefill_tps"),
-                 "a_tps": avg("a_tps"), "a_prefill_tps": avg("a_prefill_tps"), "a_kv_pct": avg("a_kv_pct"),
-                 "b_tps": avg("b_tps"), "b_prefill_tps": avg("b_prefill_tps"), "b_kv_pct": avg("b_kv_pct")}
+                 "sys_power": avg("sys_power"), "vram_gib": avg("vram_gib")}
+            for eid in ENG:
+                for k in ("_tps", "_prefill_tps", "_ctx_pct"):
+                    r[eid + k] = avg(eid + k)
             for key in ("gpu_util_by", "gpu_temp_by", "gpu_power_by", "vram_by", "pcie_rx_by", "pcie_tx_by"):
                 r[key] = avgby(key)
             r["counters"] = last.get("counters")
@@ -776,16 +523,13 @@ def rollup_and_prune():
 
 
 def sampler():
-    prev, prev_t, tick = {"a": None, "b": None}, None, 0
-    for log in LOGS.values():
-        try:
-            log.rows.extend(log.access_rows(window=4000))
-        except Exception:
-            pass
+    global _req_ts
+    _req_ts = _req_seed()
+    prev, prev_t, tick = {}, None, 0
     while True:
         t = time.time()
         try:
-            prev, prev_t = sample(prev, prev_t, tick)  # prev_t MUST carry over: it is the delta baseline for live t/s
+            prev, prev_t = sample(prev, prev_t, tick)
         except Exception as e:
             print("sample failed:", repr(e), flush=True)
         tick += 1
@@ -833,40 +577,37 @@ def api_summary(qs):
     with DB_LOCK, db() as con:
         rows = con.execute(f"SELECT j FROM {table} WHERE t BETWEEN ? AND ? ORDER BY t", (t0, t1)).fetchall()
         reqs = con.execute("SELECT eng,j FROM reqs WHERE t BETWEEN ? AND ?", (t0, t1)).fetchall()
-    prev_c = {"m": None, "a": None, "b": None}
-    acc = {e: {"req": 0.0, "prompt": 0.0, "reused": 0.0, "gen": 0.0, "pre_s": 0.0, "dec_s": 0.0} for e in ("m", "a", "b")}
+    ckeys = [CKEY[e] for e in ENG]
+    prev_c = {e: None for e in ckeys}
+    acc = {e: {"req": 0.0, "prompt": 0.0, "reused": 0.0, "gen": 0.0, "pre_s": 0.0, "dec_s": 0.0} for e in ckeys}
     for (j,) in rows:
         cs = json.loads(j).get("counters") or {}
-        for e in ("m", "a", "b"):
+        for e in ckeys:
             c1 = cs.get(e)
             if not c1:
-                continue
-            if e != "m" and "reused" not in c1:
-                # vLLM points written before the exact-counter fix (prefix sums double-counted
-                # *_by_source_total / *_cached_total) — never diff them, just re-baseline
-                prev_c[e] = None
                 continue
             c0 = prev_c[e]
             if c0:
                 for k in acc[e]:
                     d = c1.get(k, 0) - c0.get(k, 0)
-                    if d > 0:  # counter reset -> skip this delta
+                    if d > 0:  # engine restart resets the counters -> skip this delta
                         acc[e][k] += d
             prev_c[e] = c1
-    names = {"m": "main", "a": "a", "b": "b"}
-    for e, s in acc.items():
-        eng = names[e]
+    for eng in ENG:
+        s = acc[CKEY[eng]]
         prompt, reused = s["prompt"], s.get("reused", 0)
         out["engines"][eng] = {
             "requests": round(s["req"]), "prompt": round(prompt), "reused": round(reused),
             "computed": round(prompt - reused), "output": round(s["gen"]),
             "prefill_tps": round((prompt - reused) / s["pre_s"]) if s["pre_s"] > 1 else None,
             "decode_tps": round(s["gen"] / s["dec_s"], 1) if s["dec_s"] > 1 else None}
-    rq = {"main": [], "a": [], "b": []}
+    rq = {e: [] for e in ENG}
     for eng, j in reqs:
+        if eng not in rq:   # rows of retired engines stay in the db but are not reported
+            continue
         try:
             rq[eng].append(json.loads(j))
-        except (ValueError, KeyError):
+        except ValueError:
             pass
     for eng, rows_ in rq.items():
         s = out["engines"][eng]
@@ -967,23 +708,8 @@ def energy_poller():
         time.sleep(15)
 
 
-def log_unit(eid):
-    return A_UNIT if eid == "a" else B_UNIT
-
-
-def info_refresher():
-    while True:
-        for unit in (A_UNIT, B_UNIT):
-            try:
-                engine_info(unit)
-            except Exception as e:
-                print("engine_info failed:", repr(e), flush=True)
-        time.sleep(300)
-
-
 db_init()
 db_backfill()
-threading.Thread(target=info_refresher, daemon=True).start()
 threading.Thread(target=energy_poller, daemon=True).start()
 threading.Thread(target=sampler, daemon=True).start()
 ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

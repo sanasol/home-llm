@@ -1,0 +1,14 @@
+[Unit]
+Description=OpenRGB SDK server (rig RGB, loopback :6742)
+After=systemd-modules-load.service
+
+[Service]
+Environment=QT_QPA_PLATFORM=offscreen
+WorkingDirectory=/tmp
+ExecStart=/usr/bin/openrgb --server --server-host 127.0.0.1 --server-port 6742 --noautoconnect
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Rig RGB: LLM equalizer (5090=FN 5090 lane, RAM=FN 3090 lanes; green=decode, orange=prefill, AIO flashes on requests; off when idle), 4 Hz engine poll
+After=rig-rgb-server.service
+Requires=rig-rgb-server.service
+PartOf=rig-rgb-server.service
+
+[Service]
+User=al
+WorkingDirectory=~/rgb
+ExecStart=~/rgb/venv/bin/python ~/rgb/rgbshow.py 2 live
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

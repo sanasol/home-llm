@@ -13,21 +13,21 @@ scrape_configs:
   - job_name: gpu
     static_configs: [{targets: ["localhost:9800"]}]
 
-  - job_name: vllm
-    metrics_path: /metrics
-    bearer_token_file: /etc/prometheus/tokens/side.key
-    # A back on vLLM 0.32 since 29.10 13:38 EDT (OpenJet trial rolled back, docs/16).
-    static_configs:
-      - targets: ["localhost:18020"]
-        labels: {engine: "qwen27b-a"}
-      - targets: ["localhost:18021"]
-        labels: {engine: "qwen27b-b"}
-
+  # Strata lanes: /metrics content-negotiates — Prometheus' Accept header gets vLLM-compatible text
+  # (vllm:num_requests_running, kv_cache_usage_perc, token counters; label model_name), a browser /
+  # curl without it gets the rich JSON the monitor uses. All three lanes share one API key.
+  # Uniform tok/s per lane still comes from rig_llm_exporter (job rig_llm below).
+  # 30.10: the vLLM 27B job (:18020/:18021) is retired — both 3090s now run FN 3090 lanes (docs/23).
   - job_name: strata
     metrics_path: /metrics
     bearer_token_file: /etc/prometheus/tokens/strata.key
-    params: {requests: ["all"]}
-    static_configs: [{targets: ["localhost:8001"]}]
+    static_configs:
+      - targets: ["localhost:8001"]
+        labels: {lane: "FN 5090"}
+      - targets: ["localhost:8003"]
+        labels: {lane: "FN 3090 #1"}
+      - targets: ["localhost:8004"]
+        labels: {lane: "FN 3090 #2"}
 
   - job_name: hub
     static_configs: [{targets: ["<wg-peer>:9100"]}]
@@ -36,7 +36,7 @@ scrape_configs:
     static_configs: [{targets: ["localhost:9093"]}]
 
   # rig_llm_exporter (rig/scripts/rig_llm_exporter.py): uniform tok/s, KV, cache counters
-  # for ALL engines (Strata JSON, vLLM A/B /metrics) + GPU/fan name joins.
+  # for ALL three Strata lanes + GPU/fan name joins.
   - job_name: rig_llm
     scrape_interval: 5s
     scrape_timeout: 4s
