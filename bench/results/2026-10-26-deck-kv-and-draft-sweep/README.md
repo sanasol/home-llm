@@ -35,7 +35,7 @@ Raw logs: [run1.log](run1.log), [run2.log](run2.log).
 
 - **`k8v4` beats `fp8`:** KV pool +28%, 240K per request with vision. Decode on code,
   prose and long context equal or faster; prefill unchanged. Needle at 162K found at
-  all three depths. Only the "list" workload regresses (175 vs 201). We switched.
+  all three depths. Only the "list" workload regresses (175 vs 201). I switched.
 - **K=5 is worse than K=7 everywhere.** A higher draft-acceptance rate at a small
   window does not translate into speed.
 - **K=9 vs K=7 on fp8:** tool_call +11%, faster at 8–35K (+4…+14%), slower at 108K

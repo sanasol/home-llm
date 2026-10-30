@@ -44,7 +44,7 @@ Screen constraints worth knowing: the built-in panel's console is fbcon 160×50,
 8 colors + bold only (no 256/truecolor). Don't trust `/dev/fb0` dumps: the buffer is
 portrait (stride 3328, rotated 90°) and fb0 can be the HDMI output.
 
-## Pitfalls we hit (each one cost an evening)
+## Pitfalls I hit (each one cost an evening)
 
 - **Boot loop** on reboot with the GPU attached → see bring-up order above.
 - **Pixel font bug**: the 5x7 FONT dict is bit-packed (bit 4 = leftmost column); a

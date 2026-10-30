@@ -1,9 +1,9 @@
 # home-llm
 
-Public artifacts from our home LLM build (Belgrade, 3 GPUs: RTX 5090 + 2× RTX 3090,
+Public artifacts from my home LLM build (Belgrade, 3 GPUs: RTX 5090 + 2× RTX 3090,
 Ubuntu, all local). This repo holds the **stopgap-server phase**: running Qwen3.8-27B
 on a **Steam Deck OLED + Minisforum DEG1 eGPU dock + RTX 5090** while the main rig
-was still in boxes — plus the engine benchmarks, web monitor and on-screen TUI we
+was still in boxes — plus the engine benchmarks, web monitor and on-screen TUI I
 built for it.
 
 ```
@@ -29,4 +29,4 @@ Ubuntu 26.04 on a 256 GB microSD · engine: NInfer (Qwen3.8-27B NVFP4 + DFlash2 
 - Switching KV cache fp8 → k8v4: KV pool +28%, 240K fits with vision, no speed loss.
 - The narrow OCuLink x4 link barely costs anything: decode matches full-desktop runs.
 
-Companion rig repos and the cyrillic spec-decode work: see our profile.
+Companion rig repos and the cyrillic spec-decode work: see my profile.
