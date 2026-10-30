@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deck 5090 · NInfer</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#6b7280;--line:#e5e7eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;
+  --c1:#2563eb;--c2:#db2777;--c3:#059669;--c4:#d97706;--tip:#111827;--tiptext:#f9fafb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a21;--text:#e6e8eb;--muted:#9aa3ae;--line:#2a2f3a;
+  --ok:#4ade80;--warn:#fbbf24;--bad:#f87171;--c1:#60a5fa;--c2:#f472b6;--c3:#34d399;--c4:#fbbf24;--tip:#f3f4f6;--tiptext:#111827}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:16px 16px 4px}
+h1{font-size:18px;margin:0}
+.muted{color:var(--muted)}
+.pill{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:12px}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.seg{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12px}
+.seg button{background:var(--card);color:var(--muted);border:0;padding:4px 10px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--c1);color:#fff}
+main{padding:8px 16px 24px;display:grid;gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.tile,.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px}
+.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.tile .l{color:var(--muted);font-size:12px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card h2{font-size:13px;margin:0 0 6px;font-weight:600}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted);margin-bottom:4px;min-height:18px}
+.legend i{display:inline-block;width:10px;height:3px;margin-right:4px;vertical-align:middle}
+.plot{position:relative}
+canvas{width:100%;height:160px;display:block;cursor:crosshair}
+.tip{position:absolute;pointer-events:none;background:var(--tip);color:var(--tiptext);border-radius:6px;padding:6px 8px;
+  font-size:12px;white-space:nowrap;display:none;z-index:2;font-variant-numeric:tabular-nums;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.tip b{font-weight:600}
+.tip i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:6px}
+.bar>div{height:100%;background:var(--c1)}
+.load{display:grid;gap:8px;background:var(--card);border:1px solid var(--warn);border-radius:10px;padding:12px 14px}
+.load .t{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.loadbar{height:12px;background:var(--line);border-radius:6px;overflow:hidden}
+.loadbar i{display:block;height:100%;width:0;background:var(--warn);border-radius:6px;transition:width 1s linear}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{color:var(--muted);font-weight:500}
+</style>
+</head>
+<body>
+<header>
+  <h1>Deck 5090 · NInfer</h1>
+  <span id="model" class="muted"></span>
+  <span id="svc" class="pill">…</span>
+  <span id="upd" class="muted"></span>
+  <div class="seg" id="smooth" title="Moving average over the charts">
+    <button data-w="1">Raw</button><button data-w="5">5 s</button><button data-w="15">15 s</button><button data-w="60">60 s</button>
+  </div>
+</header>
+<section class="load" id="load" hidden>
+  <div class="t" id="loadt">…</div>
+  <div class="loadbar"><i id="loadb"></i></div>
+</section>
+<main>
+  <section class="tiles" id="tiles"></section>
+  <section class="charts" id="charts"></section>
+  <section class="card">
+    <h2>Recent requests</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>time</th><th>API</th><th>prompt</th><th>cached</th><th>output</th><th>TTFT</th><th>prefill tok/s</th><th>decode tok/s</th><th>accept</th><th>total</th></tr></thead>
+      <tbody id="reqs"></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (v, d = 0) => v == null || isNaN(v) ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: d, minimumFractionDigits: d});
+const gib = b => b / 1073741824;
+const clock = t => new Date(t * 1000).toLocaleTimeString('en-GB');
+let win = 5;
+try { win = +localStorage.getItem('smooth') || 5; } catch {}
+
+// Charts: each series reads one history field (or a computed one) and is smoothed by a trailing moving average.
+const CHARTS = [
+  {id: 'prefill', title: 'Prefill, tok/s', series: [{key: 'prefill_tps', name: 'prefill', color: '--c1', unit: 'tok/s', min: 1000}]},
+  {id: 'decode', title: 'Decode, tok/s · draft acceptance', series: [
+    {key: 'decode_tps', name: 'decode', color: '--c2', unit: 'tok/s', min: 100},
+    {key: 'accept', name: 'accept', color: '--c4', unit: '%', axis: 'right', max: 100, ratio: ['accepted', 'drafted']}]},
+  {id: 'gpu', title: 'GPU', series: [
+    {key: 'gpu_util', name: 'util', color: '--c1', unit: '%', max: 100},
+    {key: 'temp', name: 'temp', color: '--c2', unit: '°C', max: 100},
+    {key: 'power', name: 'power', color: '--c4', unit: 'W', axis: 'right', maxFrom: 'power.limit'}]},
+  {id: 'mem', title: 'Memory', series: [
+    {key: 'kv_pct', name: 'KV pool', color: '--c3', unit: '%', max: 100},
+    {key: 'vram_gib', name: 'VRAM', color: '--c1', unit: 'GiB', axis: 'right', max: 32, digits: 1}]},
+  {id: 'host', title: 'CPU · Disk', series: [
+    {key: 'cpu_pct', name: 'cpu', color: '--c3', unit: '%', max: 100},
+    {key: 'disk_r_mbps', name: 'disk read', color: '--c1', unit: 'MB/s', axis: 'right', min: 1},
+    {key: 'disk_w_mbps', name: 'disk write', color: '--c2', unit: 'MB/s', axis: 'right', min: 1}]},
+  {id: 'queue', title: 'Requests', series: [
+    {key: 'running', name: 'running', color: '--c3', unit: '', min: 2, step: true},
+    {key: 'waiting', name: 'waiting', color: '--c2', unit: '', min: 2, step: true}]},
+];
+
+document.getElementById('charts').innerHTML = CHARTS.map(c =>
+  `<div class="card"><h2>${c.title}</h2><div class="legend">${c.series.map(s => `<span><i style="background:var(${s.color})"></i>${s.name}${s.unit ? ', ' + s.unit : ''}</span>`).join('')}</div>` +
+  `<div class="plot"><canvas id="ch-${c.id}"></canvas><div class="tip" id="tip-${c.id}"></div></div></div>`).join('');
+
+function smooth(H, s) {
+  const out = new Array(H.length).fill(null);
+  if (s.ratio) {  // acceptance: sum(accepted) / sum(drafted) over the window, not a mean of ratios
+    for (let i = 0; i < H.length; i++) {
+      let a = 0, d = 0;
+      for (let j = Math.max(0, i - win + 1); j <= i; j++) { a += H[j][s.ratio[0]] || 0; d += H[j][s.ratio[1]] || 0; }
+      out[i] = d ? 100 * a / d : null;
+    }
+    return out;
+  }
+  const w = s.step ? 1 : win;
+  for (let i = 0; i < H.length; i++) {
+    if (H[i][s.key] == null) continue;
+    let sum = 0, n = 0;
+    for (let j = Math.max(0, i - w + 1); j <= i; j++) if (H[j][s.key] != null) { sum += H[j][s.key]; n++; }
+    out[i] = sum / n;
+  }
+  return out;
+}
+
+const plots = {};
+function draw(c, H, g) {
+  const cv = document.getElementById('ch-' + c.id), r = devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * r; cv.height = h * r;
+  const x = cv.getContext('2d'); x.scale(r, r);
+  const right = c.series.some(s => s.axis === 'right');
+  const pad = {l: 44, r: right ? 40 : 8, t: 8, b: 18};
+  const data = c.series.map(s => smooth(H, s));
+  const top = {};
+  c.series.forEach((s, k) => {
+    const ax = s.axis || 'left', vals = data[k].filter(v => v != null);
+    const mx = s.maxFrom ? (g[s.maxFrom] || 600) : s.max ?? Math.max(s.min ?? 1, ...vals) * 1.1;
+    top[ax] = Math.max(top[ax] || 0, mx);
+  });
+  const n = H.length, X = i => pad.l + (w - pad.l - pad.r) * (n > 1 ? i / (n - 1) : 1);
+  const Y = (v, ax) => pad.t + (h - pad.t - pad.b) * (1 - Math.min(v, top[ax]) / top[ax]);
+  x.strokeStyle = css('--line'); x.fillStyle = css('--muted'); x.font = '11px system-ui'; x.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = pad.t + (h - pad.t - pad.b) * i / 3;
+    x.beginPath(); x.moveTo(pad.l, y); x.lineTo(w - pad.r, y); x.stroke();
+    x.textAlign = 'right'; x.fillText(fmt(top.left * (1 - i / 3)), pad.l - 4, y + 4);
+    if (right) { x.textAlign = 'left'; x.fillText(fmt(top.right * (1 - i / 3)), w - pad.r + 4, y + 4); }
+  }
+  if (n > 1) {  // clock labels on the time axis
+    x.textAlign = 'center';
+    for (let k = 0; k <= 4; k++) {
+      const i = Math.round((n - 1) * k / 4);
+      x.fillText(clock(H[i].t).slice(0, 5), Math.min(Math.max(X(i), pad.l + 14), w - pad.r - 14), h - 4);
+    }
+  }
+  c.series.forEach((s, k) => {
+    x.strokeStyle = css(s.color); x.lineWidth = 1.6; x.lineJoin = 'round'; x.beginPath();
+    let pen = false, py0 = 0;
+    data[k].forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      const px = X(i), py = Y(v, s.axis || 'left');
+      if (!pen) x.moveTo(px, py); else if (s.step) { x.lineTo(px, py0); x.lineTo(px, py); } else x.lineTo(px, py);
+      pen = true; py0 = py;
+    });
+    x.stroke();
+  });
+  plots[c.id] = {c, H, data, X, Y, pad, w, h, top};
+  if (hover[c.id] != null) crosshair(c.id, hover[c.id]);
+}
+
+const hover = {};
+function crosshair(id, mx) {
+  const p = plots[id]; if (!p || p.H.length < 2) return;
+  const i = Math.max(0, Math.min(p.H.length - 1, Math.round((mx - p.pad.l) / (p.w - p.pad.l - p.pad.r) * (p.H.length - 1))));
+  const cv = document.getElementById('ch-' + id), x = cv.getContext('2d');
+  const px = p.X(i);
+  x.strokeStyle = css('--muted'); x.setLineDash([3, 3]); x.beginPath(); x.moveTo(px, p.pad.t); x.lineTo(px, p.h - p.pad.b); x.stroke(); x.setLineDash([]);
+  const rows = p.c.series.map((s, k) => {
+    const v = p.data[k][i];
+    if (v != null) { x.fillStyle = css(s.color); x.beginPath(); x.arc(px, p.Y(v, s.axis || 'left'), 3.5, 0, 7); x.fill(); }
+    return `<div><i style="background:${css(s.color)}"></i>${s.name}: <b>${fmt(v, s.digits ?? (s.unit === '%' ? 1 : 0))}</b> ${s.unit}</div>`;
+  });
+  const tip = document.getElementById('tip-' + id);
+  tip.innerHTML = `<div class="muted" style="color:inherit;opacity:.7">${clock(p.H[i].t)}${win > 1 ? ` · avg ${win} s` : ''}</div>` + rows.join('');
+  tip.style.display = 'block';
+  const left = px + 12 + tip.offsetWidth > p.w ? px - tip.offsetWidth - 12 : px + 12;
+  tip.style.left = left + 'px'; tip.style.top = '8px';
+}
+for (const c of CHARTS) {
+  const cv = document.getElementById('ch-' + c.id);
+  cv.addEventListener('mousemove', e => { hover[c.id] = e.offsetX; const p = plots[c.id]; if (p) draw(c, p.H, last.gpu || {}); });
+  cv.addEventListener('mouseleave', () => { hover[c.id] = null; document.getElementById('tip-' + c.id).style.display = 'none'; const p = plots[c.id]; if (p) draw(c, p.H, last.gpu || {}); });
+}
+
+for (const b of document.querySelectorAll('#smooth button')) {
+  b.classList.toggle('on', +b.dataset.w === win);
+  b.onclick = () => {
+    win = +b.dataset.w;
+    try { localStorage.setItem('smooth', win); } catch {}
+    document.querySelectorAll('#smooth button').forEach(o => o.classList.toggle('on', o === b));
+    render();
+  };
+}
+
+function tile(label, value, sub, pct) {
+  return `<div class="tile"><div class="l">${label}</div><div class="v">${value}</div>` +
+    (sub ? `<div class="l">${sub}</div>` : '') +
+    (pct != null ? `<div class="bar"><div style="width:${Math.min(100, pct)}%"></div></div>` : '') + '</div>';
+}
+
+let last = {}, busy = false;
+function render() {
+  const s = last; if (!s.history) return;
+  const m = s.ninfer, g = s.gpu, hst = s.host, H = s.history;
+  const ready = m.ninfer_engine_ready === 1, stale = Date.now() / 1000 - s.updated > 5;
+  const svc = document.getElementById('svc');
+  // systemd says "active" as soon as the process runs; weights take ~4.5 min from the microSD after that
+  const loading = !ready && ['active', 'activating'].includes(s.service);
+  svc.textContent = stale ? 'stale' : ready ? 'ready' : loading ? 'loading' : (s.service || 'no response');
+  svc.className = 'pill ' + (stale ? 'bad' : ready ? 'ok' : loading ? 'warn' : 'bad');
+  // model-load banner: NInfer logs weight-loading progress to the journal; the monitor parses it
+  const ld = s.model_load || {};
+  const loadEl = document.getElementById('load');
+  if (ld.phase === 'loading' || ld.phase === 'finalizing') {
+    loadEl.hidden = false;
+    const fin = ld.phase === 'finalizing';
+    loadEl.style.borderColor = fin ? 'var(--ok)' : 'var(--warn)';
+    const barEl = document.getElementById('loadb');
+    barEl.style.background = fin ? 'var(--ok)' : 'var(--warn)';
+    barEl.style.width = Math.min(100, fin ? 100 : (ld.pct ?? 0)) + '%';
+    document.getElementById('loadt').textContent = fin
+      ? `Weights loaded (${fmt(ld.total_gib, 1)} GiB) — finalizing: CUDA graphs, host context…`
+      : `Loading model — ${fmt(ld.pct ?? 0, 1)}% · ${fmt(ld.loaded_gib, 1)} / ${fmt(ld.total_gib, 1)} GiB · ${fmt(ld.speed_mib_s, 0)} MiB/s · ETA ${ld.eta_text}`;
+  } else loadEl.hidden = true;
+  const info = Object.keys(m).find(k => k.startsWith('ninfer_model_info'));
+  document.getElementById('model').textContent = info ? info.replace(/.*model_name="([^"]+)",speculative_backend="([^"]+)".*/, '$1 · $2') + ` · ${fmt(m.ninfer_max_context_tokens / 1024)}K max context` : '';
+  document.getElementById('upd').textContent = 'updated ' + clock(s.updated);
+  const kvU = m['ninfer_device_kv_used_page_groups{pool_id="0"}'], kvC = m['ninfer_device_kv_capacity_page_groups{pool_id="0"}'];
+  const kvPct = kvC ? 100 * kvU / kvC : null;
+  const kvTokCap = s.kv_capacity_tokens, kvTok = kvC && kvTokCap ? kvTokCap * kvU / kvC : null;
+  const prompt = m.ninfer_prompt_tokens_total, cached = m.ninfer_prompt_tokens_cached_total;
+  const acc = m.ninfer_spec_decode_draft_tokens_total ? 100 * m.ninfer_spec_decode_accepted_tokens_total / m.ninfer_spec_decode_draft_tokens_total : null;
+  const lp = H.length ? H[H.length - 1] : {};
+  const ttft = m.ninfer_time_to_first_token_seconds_count ? m.ninfer_time_to_first_token_seconds_sum / m.ninfer_time_to_first_token_seconds_count : null;
+  const done = m['ninfer_requests_total{outcome="completed"}'];
+  const failed = (m['ninfer_requests_total{outcome="failed"}'] || 0) + (m['ninfer_requests_total{outcome="rejected"}'] || 0);
+  document.getElementById('tiles').innerHTML = [
+    tile('Requests', `${fmt(m.ninfer_requests_running)} / ${fmt(m.ninfer_max_concurrency)}`, `waiting ${fmt(m.ninfer_requests_waiting)} · paused ${fmt(m.ninfer_requests_paused)}`),
+    tile('Decode now', fmt(lp.decode_tps), 'tok/s'),
+    tile('Prefill now', fmt(lp.prefill_tps), 'tok/s'),
+    tile('KV pool', kvPct == null ? '—' : fmt(kvPct, 0) + '%', kvTok == null ? '' : `≈${fmt(kvTok / 1000)}K of ${fmt(kvTokCap / 1000)}K tokens`, kvPct),
+    tile('Host cache', m.ninfer_host_context_capacity_bytes ? `${fmt(gib(m.ninfer_host_context_used_bytes), 1)} / ${fmt(gib(m.ninfer_host_context_capacity_bytes))} GiB` : '—', `${fmt(m.ninfer_host_state_images)} states`, m.ninfer_host_context_capacity_bytes ? 100 * m.ninfer_host_context_used_bytes / m.ninfer_host_context_capacity_bytes : null),
+    tile('Prompt cache hits', prompt ? fmt(100 * cached / prompt, 1) + '%' : '—', `${fmt(cached)} of ${fmt(prompt)} tokens`),
+    tile('Draft acceptance', acc == null ? '—' : fmt(acc, 1) + '%', `${fmt(m.ninfer_spec_decode_accepted_tokens_total)} tokens`),
+    tile('Avg TTFT', ttft == null ? '—' : fmt(ttft, 2) + ' s', `${fmt(done)} done · ${fmt(failed)} failed`),
+    tile('GPU', g['utilization.gpu'] == null ? '—' : fmt(g['utilization.gpu']) + '%', `${fmt(g['power.draw'])} / ${fmt(g['power.limit'])} W · ${fmt(g['temperature.gpu'])} °C`),
+    tile('VRAM', g['memory.used'] == null ? '—' : `${fmt(g['memory.used'] / 1024, 1)} / ${fmt(g['memory.total'] / 1024)} GiB`, `PCIe ${fmt(g['pcie.link.gen.current'])}.0 x${fmt(g['pcie.link.width.current'])}`, g['memory.total'] ? 100 * g['memory.used'] / g['memory.total'] : null),
+    tile('Deck RAM', `${fmt(gib(hst.mem_total - hst.mem_available), 1)} / ${fmt(gib(hst.mem_total))} GiB`, `load ${fmt(hst.load1, 2)}`, 100 * (1 - hst.mem_available / hst.mem_total)),
+    tile('CPU', lp.cpu_pct == null ? '—' : fmt(lp.cpu_pct, 1) + '%', `load ${fmt(hst.load1, 2)}`),
+    tile('Disk', hst.disk_total ? `${fmt(gib(hst.disk_total - hst.disk_avail), 0)} / ${fmt(gib(hst.disk_total), 0)} GiB` : '—',
+      `read ${fmt(lp.disk_r_mbps, 2)} · write ${fmt(lp.disk_w_mbps, 2)} MB/s`,
+      hst.disk_total ? 100 * (hst.disk_total - hst.disk_avail) / hst.disk_total : null),
+  ].join('');
+  for (const c of CHARTS) draw(c, H, g);
+  document.getElementById('reqs').innerHTML = s.requests.map(r =>
+    `<tr><td>${r.ts.slice(11)}</td><td>${r.api}</td><td>${fmt(r.prompt)}</td><td>${fmt(r.cache_pct)}%</td><td>${fmt(r.output)}</td>` +
+    `<td>${fmt(r.ttft, 2)} s</td><td>${fmt(r.prefill_tps)}</td><td>${fmt(r.decode_tps)}</td><td>${r.accept_pct == null ? '—' : fmt(r.accept_pct) + '%'}</td><td>${fmt(r.total, 1)} s</td></tr>`
+  ).join('') || '<tr><td colspan="10" class="muted">no requests yet</td></tr>';
+}
+
+async function tick() {
+  if (busy) return;  // never stack requests if the server is slow
+  busy = true;
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 4000);
+  try { last = await (await fetch('api/state', {signal: ctl.signal})).json(); render(); }
+  catch { const svc = document.getElementById('svc'); svc.textContent = 'monitor unreachable'; svc.className = 'pill bad'; }
+  finally { clearTimeout(t); busy = false; }
+}
+tick(); setInterval(tick, 1000);
+addEventListener('resize', render);
+</script>
+</body>
+</html>

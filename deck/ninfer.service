@@ -1,0 +1,25 @@
+[Unit]
+Description=NInfer · Qwen3.8-27B NVFP4 + DFlash2 · RTX 5090 (DEG1)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+User=sanasol
+WorkingDirectory=/home/sanasol/ninfer
+EnvironmentFile=/etc/ninfer.env
+# no GPU (Deck cold-booted without the dock): fail and retry later instead of starting blind
+ExecStartPre=/usr/bin/nvidia-smi -L
+ExecStartPre=+/usr/bin/nvidia-smi -pl 460
+ExecStart=/home/sanasol/ninfer/build/apps/ninfer-serve models/qwen3_8_27b_nvfp4.ninfer \
+  --host 0.0.0.0 --port 8080 --api-key ${NINFER_API_KEY} \
+  --max-context 240000 --kv-capacity auto --max-concurrency 2 --kv-dtype k8v4 --device-state-slots 2 \
+  --spec dflash2 --draft-tokens 7 --lm-head-draft --preserve-thinking --vision \
+  --host-context-mib 4096 --default-max-tokens 32768
+Restart=on-failure
+RestartSec=30
+LimitMEMLOCK=infinity
+LimitNOFILE=524288
+
+[Install]
+WantedBy=multi-user.target

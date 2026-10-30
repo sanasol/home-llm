@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+# Rust
+deck/tui-rs/target/
+# misc
+.DS_Store

@@ -1,0 +1,26 @@
+[
+ {
+  "depth": 0.1,
+  "prompt_tokens": 131210,
+  "expected": "C3875-T23",
+  "answer": "C3875-T23",
+  "pass": true,
+  "seconds": 22.0
+ },
+ {
+  "depth": 0.5,
+  "prompt_tokens": 131210,
+  "expected": "F4684-S89",
+  "answer": "F4684-S89",
+  "pass": true,
+  "seconds": 22.2
+ },
+ {
+  "depth": 0.9,
+  "prompt_tokens": 131210,
+  "expected": "E9327-S56",
+  "answer": "E9327-S56",
+  "pass": true,
+  "seconds": 22.5
+ }
+]

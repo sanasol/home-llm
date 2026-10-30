@@ -1,0 +1,127 @@
+{
+ "url": "http://127.0.0.1:18080",
+ "model": "qwen3.8-27b",
+ "short": {
+  "code": [
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.048,
+    "decode_tps": 235.6,
+    "total_s": 2.22
+   },
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.031,
+    "decode_tps": 235.6,
+    "total_s": 2.2
+   },
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.031,
+    "decode_tps": 235.6,
+    "total_s": 2.2
+   }
+  ],
+  "prose": [
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.158,
+    "decode_tps": 147.1,
+    "total_s": 3.63
+   },
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.156,
+    "decode_tps": 147.1,
+    "total_s": 3.63
+   },
+   {
+    "prompt_tokens": 33,
+    "completion_tokens": 512,
+    "ttft_s": 0.156,
+    "decode_tps": 147.2,
+    "total_s": 3.63
+   }
+  ],
+  "list": [
+   {
+    "prompt_tokens": 31,
+    "completion_tokens": 512,
+    "ttft_s": 0.156,
+    "decode_tps": 160.6,
+    "total_s": 3.34
+   },
+   {
+    "prompt_tokens": 31,
+    "completion_tokens": 512,
+    "ttft_s": 0.156,
+    "decode_tps": 160.6,
+    "total_s": 3.34
+   },
+   {
+    "prompt_tokens": 31,
+    "completion_tokens": 512,
+    "ttft_s": 0.156,
+    "decode_tps": 160.6,
+    "total_s": 3.34
+   }
+  ],
+  "tool_call": [
+   {
+    "prompt_tokens": 324,
+    "completion_tokens": 1024,
+    "ttft_s": null,
+    "decode_tps": 199.2,
+    "total_s": 5.14,
+    "tool_calls": 0
+   },
+   {
+    "prompt_tokens": 324,
+    "completion_tokens": 1024,
+    "ttft_s": null,
+    "decode_tps": 255.9,
+    "total_s": 4.0,
+    "tool_calls": 0
+   },
+   {
+    "prompt_tokens": 324,
+    "completion_tokens": 1024,
+    "ttft_s": null,
+    "decode_tps": 255.9,
+    "total_s": 4.0,
+    "tool_calls": 0
+   }
+  ]
+ },
+ "long": [
+  {
+   "prompt_tokens": 8791,
+   "completion_tokens": 256,
+   "ttft_s": 0.877,
+   "decode_tps": 174.2,
+   "total_s": 2.34,
+   "chars": 26000
+  },
+  {
+   "prompt_tokens": 34757,
+   "completion_tokens": 256,
+   "ttft_s": 3.714,
+   "decode_tps": 159.3,
+   "total_s": 5.32,
+   "chars": 105000
+  },
+  {
+   "prompt_tokens": 107597,
+   "completion_tokens": 256,
+   "ttft_s": 16.549,
+   "decode_tps": 161.3,
+   "total_s": 18.13,
+   "chars": 330000
+  }
+ ]
+}

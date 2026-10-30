@@ -1,0 +1,13 @@
+[Unit]
+Description=NInfer monitor page (:8090)
+After=network-online.target
+
+[Service]
+User=sanasol
+EnvironmentFile=/etc/ninfer.env
+ExecStart=/usr/bin/python3 /home/sanasol/ninfer-monitor/monitor.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

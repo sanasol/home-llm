@@ -1,0 +1,54 @@
+=== planner: k8v4 at 240000 per request
+k8v4 240K: fits
+k8v4 262K: fits
+=== fp8-k7: --kv-dtype fp8 --spec dflash2 --draft-tokens 7
+2026-10-26 01:13:06.797  INFO  capacity | KV 215,488 tokens, fp8, auto | pages 3,367/6,656 | runtime 8.26 GiB | free 1015.1 MiB
+short code: decode median 256.5 tok/s, ttft 0.031 s
+short prose: decode median 162.7 tok/s, ttft 0.156 s
+short list: decode median 201.0 tok/s, ttft 0.156 s
+Traceback (most recent call last):
+  File "/home/sanasol/bench.py", line 70, in <module>
+    runs = [run(TOOL_TASK, 1024, TOOLS) for _ in range(3)]
+            ~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sanasol/bench.py", line 50, in run
+    "ttft_s": round(first - t0, 3), "decode_tps": round((toks - 1) / (last - first), 1) if last > first else None,
+                    ~~~~~~^~~~
+TypeError: unsupported operand type(s) for -: 'NoneType' and 'float'
+needle depth 0.1: PASS (131210 tok, 22.1 s) expected J3999-N34 got 'J3999-N34'
+needle depth 0.5: PASS (131210 tok, 22.6 s) expected E9532-V21 got 'E9532-V21'
+needle depth 0.9: PASS (131210 tok, 22.7 s) expected D4840-M56 got 'D4840-M56'
+=== k8v4-k7: --kv-dtype k8v4 --spec dflash2 --draft-tokens 7
+2026-10-26 01:22:01.302  INFO  capacity | KV 276,672 tokens, k8v4, auto | pages 4,323/6,656 | runtime 8.26 GiB | free 1013.1 MiB
+short code: decode median 274.3 tok/s, ttft 0.03 s
+short prose: decode median 181.4 tok/s, ttft 0.157 s
+short list: decode median 175.4 tok/s, ttft 0.156 s
+Traceback (most recent call last):
+  File "/home/sanasol/bench.py", line 70, in <module>
+    runs = [run(TOOL_TASK, 1024, TOOLS) for _ in range(3)]
+            ~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/sanasol/bench.py", line 50, in run
+    "ttft_s": round(first - t0, 3), "decode_tps": round((toks - 1) / (last - first), 1) if last > first else None,
+                    ~~~~~~^~~~
+TypeError: unsupported operand type(s) for -: 'NoneType' and 'float'
+needle depth 0.1: PASS (131210 tok, 22.0 s) expected C3875-T23 got 'C3875-T23'
+needle depth 0.5: PASS (131210 tok, 22.2 s) expected F4684-S89 got 'F4684-S89'
+needle depth 0.9: PASS (131210 tok, 22.5 s) expected E9327-S56 got 'E9327-S56'
+=== fp8-k5: --kv-dtype fp8 --spec dflash2 --draft-tokens 5
+2026-10-26 01:30:54.936  INFO  capacity | KV 215,808 tokens, fp8, auto | pages 3,372/6,656 | runtime 8.26 GiB | free 1015.1 MiB
+short code: decode median 235.6 tok/s, ttft 0.031 s
+short prose: decode median 147.1 tok/s, ttft 0.156 s
+short list: decode median 160.6 tok/s, ttft 0.156 s
+short tool_call: decode median 255.9 tok/s, ttft None s
+long 8791 tok: prefill 0.877 s (10024 tok/s), decode 174.2 tok/s
+long 34757 tok: prefill 3.714 s (9358 tok/s), decode 159.3 tok/s
+long 107597 tok: prefill 16.549 s (6502 tok/s), decode 161.3 tok/s
+=== fp8-k9: --kv-dtype fp8 --spec dflash2 --draft-tokens 9
+2026-10-26 01:37:40.161  INFO  capacity | KV 215,232 tokens, fp8, auto | pages 3,363/6,656 | runtime 8.26 GiB | free 1015.1 MiB
+short code: decode median 253.5 tok/s, ttft 0.031 s
+short prose: decode median 161.1 tok/s, ttft 0.157 s
+short list: decode median 194.6 tok/s, ttft 0.157 s
+short tool_call: decode median 360.6 tok/s, ttft None s
+long 8791 tok: prefill 0.875 s (10047 tok/s), decode 213.0 tok/s
+long 34760 tok: prefill 3.71 s (9369 tok/s), decode 191.6 tok/s
+long 107601 tok: prefill 16.533 s (6508 tok/s), decode 148.1 tok/s
+=== done; ninfer.service started
