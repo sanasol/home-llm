@@ -1,0 +1,41 @@
+{
+  "access": "tailscale",
+  "api_key": "<redacted>",
+  "context": 262144,
+  "created": "2026-10-26 16:12:08.650596",
+  "data_dir": "/models",
+  "drafting": null,
+  "dsv41_package": null,
+  "extra": {
+    "--adapt-async": "1",
+    "--conversation-cache-mib": "512",
+    "--conversation-cache-min-free-mib": "1536",
+    "--host-core": "first",
+    "--lookup-chain": "4",
+    "--mtp-draft-vocab": "/models/mtp/draft_vocab_cyrillic.bin",
+    "--ple-io": "direct",
+    "--prefill": "auto:32768",
+    "--shared-expert-arena": "/mnt/strata-arena/iq3s.arena"
+  },
+  "family": "qwen",
+  "gpu_roles": null,
+  "gpus": [
+    1
+  ],
+  "kv": null,
+  "last_used": "2026-11-02 04:05:50.653955",
+  "model": "IQ3_S",
+  "model_path": "/models/models/sc117-abl-IQ3_S",
+  "mtp": null,
+  "name": "lane2",
+  "no_key": false,
+  "parallel": 1,
+  "port": 8003,
+  "schema": "strata.launch/1",
+  "speed": null,
+  "tune": "skip",
+  "tune_allow_small": false,
+  "tuned_at": null,
+  "tuned_preset": null,
+  "vision": "off"
+}

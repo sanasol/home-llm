@@ -424,6 +424,7 @@ main { flex: 1; min-height: 0; display: flex; }
 
 /* rig additions on top of the kit */
 .req-src{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--st-ink-muted)}
+.sess{font-size:var(--st-fs-xs);white-space:nowrap}
 a.st-tab{text-decoration:none}
 .updated-at{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}
 .st-pill[data-state="alert"] .st-pill__dot{background:var(--st-danger);box-shadow:0 0 0 4px var(--st-danger-tint)}
@@ -465,7 +466,21 @@ a.st-tab{text-decoration:none}
 .speed-values{display:flex;gap:var(--st-s-5);align-items:baseline}
 .speed-prefill .st-metric__value{font-size:var(--st-fs-lg)}
 .mchart{width:100%;height:112px;margin-top:2px}
+/* lane cards: equal thirds, the GPU/context line under the title, boot progress */
+.eng-row{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1100px){.eng-row{grid-template-columns:minmax(0,1fr)}}
+.eng-card .state-card__head{flex-wrap:wrap;row-gap:6px}
+.eng-sub{font-size:var(--st-fs-xs);margin:-2px 0 8px;line-height:1.35}
+.eng-note{font-size:var(--st-fs-xs);color:var(--st-warn);min-height:0;margin-top:4px}
+.eng-note:empty{display:none}
+.eng-card.booting .st-progress__bar{transition:width .9s linear}
+.req-src{white-space:nowrap;display:inline-block}
+.st-table th{white-space:nowrap}
+#eng-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 28px}
+#eng-facts .facts{grid-template-columns:minmax(110px,auto) minmax(0,1fr) !important}
+#eng-facts .facts dd{overflow-wrap:anywhere}
 .hchart{width:100%;height:46px;margin-top:2px}
+
 </style>
 <script>
   // the theme before the first paint: the saved choice, else the system's
@@ -515,6 +530,7 @@ a.st-tab{text-decoration:none}
   <span class="st-header__brand">Rig</span>
   <nav class="st-tabs" role="tablist" aria-label="Views">
     <a class="st-tab" role="tab" href="/" aria-label="Monitor"><svg class="st-icon st-icon--sm"><use href="#i-activity"/></svg>Monitor</a>
+    <a class="st-tab" role="tab" href="/history" aria-label="History"><svg class="st-icon st-icon--sm"><use href="#i-clock"/></svg>History</a>
     <a class="st-tab" role="tab" href="/hw" aria-label="Hardware" aria-selected="true"><svg class="st-icon st-icon--sm"><use href="#i-cpu"/></svg>Hardware</a>
   </nav>
   <span class="st-header__spacer"></span>
@@ -598,8 +614,9 @@ function facts(el, rows) {
 // canvas colors cannot use CSS vars; resolve them per draw (theme change re-renders)
 const cvar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SC = () => [cvar("--st-accent"), cvar("--st-info"), cvar("--st-warn"), cvar("--st-ink-muted")];
-const hhmmss = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
-const hhmm = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+// chart axes: 24h clock, no AM/PM - short labels never rotate in a narrow card
+const hhmmss = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"});
+const hhmm = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
 
 // Chart.js line chart: time on the x axis, hover tooltip listing every series at that
 // instant, legend below for multi-series. defs: [{label, c: () => color, values, unit, dec, dash, w}]
@@ -637,7 +654,7 @@ function mkU(el, xs, defs, opt = {}) {
       },
       scales: {
         x: {display: opt.axes !== false, grid: {color: cvar("--st-line")}, border: {color: cvar("--st-line")},
-            ticks: {color: cvar("--st-ink-muted"), font: {size: 10}, maxTicksLimit: 4, autoSkip: true,
+            ticks: {color: cvar("--st-ink-muted"), font: {size: 10}, maxTicksLimit: 4, autoSkip: true, maxRotation: 0,
                     callback(i) {
                       const v = this.getLabelForValue(i);
                       if (v == null) return "";

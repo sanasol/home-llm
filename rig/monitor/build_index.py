@@ -42,10 +42,12 @@ SPRITE = re.sub(r"^<svg[^>]*>", '<svg style="display:none" aria-hidden="true">',
 def header(active):
     mon = ' aria-selected="true"' if active == "monitor" else ""
     hw = ' aria-selected="true"' if active == "hw" else ""
+    hist = ' aria-selected="true"' if active == "hist" else ""
     return f"""<header class="st-header">
   <span class="st-header__brand">Rig</span>
   <nav class="st-tabs" role="tablist" aria-label="Views">
     <a class="st-tab" role="tab" href="/" aria-label="Monitor"{mon}><svg class="st-icon st-icon--sm"><use href="#i-activity"/></svg>Monitor</a>
+    <a class="st-tab" role="tab" href="/history" aria-label="History"{hist}><svg class="st-icon st-icon--sm"><use href="#i-clock"/></svg>History</a>
     <a class="st-tab" role="tab" href="/hw" aria-label="Hardware"{hw}><svg class="st-icon st-icon--sm"><use href="#i-cpu"/></svg>Hardware</a>
   </nav>
   <span class="st-header__spacer"></span>
@@ -98,8 +100,9 @@ function facts(el, rows) {
 // canvas colors cannot use CSS vars; resolve them per draw (theme change re-renders)
 const cvar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SC = () => [cvar("--st-accent"), cvar("--st-info"), cvar("--st-warn"), cvar("--st-ink-muted")];
-const hhmmss = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
-const hhmm = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+// chart axes: 24h clock, no AM/PM - short labels never rotate in a narrow card
+const hhmmss = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"});
+const hhmm = (ms) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hourCycle: "h23"});
 
 // Chart.js line chart: time on the x axis, hover tooltip listing every series at that
 // instant, legend below for multi-series. defs: [{label, c: () => color, values, unit, dec, dash, w}]
@@ -137,7 +140,7 @@ function mkU(el, xs, defs, opt = {}) {
       },
       scales: {
         x: {display: opt.axes !== false, grid: {color: cvar("--st-line")}, border: {color: cvar("--st-line")},
-            ticks: {color: cvar("--st-ink-muted"), font: {size: 10}, maxTicksLimit: 4, autoSkip: true,
+            ticks: {color: cvar("--st-ink-muted"), font: {size: 10}, maxTicksLimit: 4, autoSkip: true, maxRotation: 0,
                     callback(i) {
                       const v = this.getLabelForValue(i);
                       if (v == null) return "";
@@ -271,8 +274,12 @@ function setPill(state, text) {
 
 function render(s) {
   const EIDS = ["main", "l2", "l3"];
-  const names = s.eng_names || {main: {label: "FN 5090"}, l2: {label: "FN 3090 #1"}, l3: {label: "FN 3090 #2"}};
+  const names = s.eng_names || {};
   const engTag = Object.fromEntries(EIDS.map((e) => [e, (names[e] || {}).label || e]));
+  window.ENGTAG = engTag;
+  for (const el of document.querySelectorAll("[data-lbl]")) el.textContent = engTag[el.dataset.lbl] || el.dataset.lbl;
+  const META = Object.fromEntries(EIDS.map((e) => [e, (s.eng[e] || {}).meta || {}]));
+  const BOOT = Object.fromEntries(EIDS.map((e) => [e, (s.eng[e] || {}).boot || null]));
   const LV = Object.fromEntries(EIDS.map((e) => [e, ((s.eng[e] || {}).live || {}).live || {}]));
   const ST = Object.fromEntries(EIDS.map((e) => [e, ((s.eng[e] || {}).stats) || {}]));
   const live = LV.main, eng = ((s.eng.main || {}).live || {}).engine || {}, cache = ((s.eng.main || {}).live || {}).conversation_cache;
@@ -297,19 +304,38 @@ function render(s) {
     }
     return `${engTag[e]} · ${fmt(l.tok_s, 1)} tok/s`;
   };
-  const pillText = act.map(laneText).join(" · ");
+  const bootTxt = EIDS.filter((e) => BOOT[e]).map((e) => `${engTag[e]} · ${BOOT[e].state === "starting" ? `starting ${Math.round(BOOT[e].pct)}%` : BOOT[e].phase}`);
+  const pillText = [...act.map(laneText), ...bootTxt].join(" · ");
   if (queued > 0) setPill("queued", `${queued} queued${pillText ? ` · ${pillText}` : ""}`);
   else if (act.length) setPill(LV[act[0]].state, pillText);
+  else if (bootTxt.length) setPill("queued", pillText);
   else setPill("idle", "Idle");
 
   // ---- three engine state cards (all Strata lanes, same logic)
   for (const e of EIDS) {
-    const l = LV[e], st = ST[e], lastR = lastOf(e);
-    const on = l.queued > 0 ? "queued" : (l.state || "idle");
-    for (const bd of document.querySelectorAll(`#${e}-badges .st-badge`)) bd.classList.toggle("on", bd.dataset.s === on);
+    const l = LV[e], st = ST[e], lastR = lastOf(e), boot = BOOT[e], meta = META[e];
+    $(`${e}-tag`).textContent = engTag[e];
+    $(`${e}-sub`).textContent = (names[e] || {}).sub || "";
+    $(`${e}-sub`).title = meta.model ? `model ${meta.model} · unit ${meta.unit} · preset ${meta.preset}` : "";
+    const on = boot ? (boot.state === "starting" ? "starting" : "down") : l.queued > 0 ? "queued" : (l.state || "idle");
+    for (const bd of document.querySelectorAll(`#${e}-badges .st-badge`)) {
+      bd.classList.toggle("on", bd.dataset.s === on);
+      // while a lane boots or is down only that badge shows (same row height); otherwise the four normal ones
+      bd.style.display = bd.classList.contains("opt") ? (bd.dataset.s === on ? "" : "none") : (boot ? "none" : "");
+    }
+    $(`${e}-card`).classList.toggle("booting", !!boot);
+    const note = $(`${e}-note`);
+    note.textContent = (meta.pending || []).length ? `preset changed, applies on restart: ${meta.pending.join(", ")}` : "";
     const prog = $(`${e}-progress`);
     let label = "Waiting for a request", detail = "", pct = 0;
-    if (l.state === "reading") {
+    if (boot) {
+      const secs = boot.elapsed_s != null && boot.elapsed_s >= 0 ? ` · ${boot.elapsed_s < 120 ? boot.elapsed_s + " s" : Math.round(boot.elapsed_s / 60) + " min"}` : "";
+      label = boot.state === "starting" ? `Starting: ${boot.phase}` : boot.state === "failed" ? "Failed" : `Down: ${boot.phase}`;
+      detail = boot.state === "starting" ? `${Math.round(boot.pct)}%${secs}` : "";
+      if (boot.detail) note.textContent = boot.detail;
+      pct = boot.state === "starting" ? boot.pct : 0;
+      prog.dataset.tone = boot.state === "starting" ? "warn" : "danger";
+    } else if (l.state === "reading") {
       label = "Reading prompt"; prog.dataset.tone = "info";
       if (l.prompt_total) {
         pct = (100 * l.prompt_read) / l.prompt_total;
@@ -503,10 +529,11 @@ function render(s) {
   const mCls = {main: "m-main", l2: "m-l2", l3: "m-l3"};
   let rows = reqs.map((r) => ({t: r.ts, eng: r.eng, badge: r.status,
     prompt: r.prompt, reused: r.reused, out: r.output, pre: r.prefill_tps, dec: r.decode_tps,
-    hit: r.hit, dur: r.dur, approx: r.approx, n: r.n, client: r.client})).sort((a, b) => (b.t || 0) - (a.t || 0));
+    hit: r.hit, dur: r.dur, approx: r.approx, n: r.n, client: r.client,
+    sess: r.sess, conv: r.conv, disk: r.disk_ms})).sort((a, b) => (b.t || 0) - (a.t || 0));
   if (REQF !== "all") rows = rows.filter((r) => r.eng === REQF);
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="9" class="muted">No requests ${REQF === "all" ? "" : "for this model"} yet</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="muted">No requests ${REQF === "all" ? "" : "for this model"} yet</td></tr>`;
   } else {
     const badge = {stop: ["", "Done"], length: ["", "Max tokens"], cancel: ["st-badge--queued", "Stopped"],
                    disconnect: ["st-badge--queued", "Closed"], error: ["st-badge--error", "Error"]};
@@ -518,9 +545,10 @@ function render(s) {
       const apTitle = r.approx ? ` title="average over ${r.n} completions that finished in one sample tick"` : "";
       const hit = r.hit == null ? "–" : `${(r.hit * 100).toFixed(1)}%`;
       return `<tr class="${mCls[r.eng] || ""}"><td>${esc(t)}<br><span class="req-src ${mCls[r.eng] || ""}">${esc(engTag[r.eng] || r.eng)}${r.client ? ` · ${esc(r.client.split(":")[0])}` : ""}</span></td>
+        <td class="sess"${r.sess ? ` title="session ${esc(r.sess)}${r.conv ? ` · conversation ${esc(r.conv)}` : ""}"` : ""}>${r.sess ? `${esc(r.sess.slice(0, 12))}${r.conv ? `<br><span class="muted">c${esc(r.conv.slice(0, 6))}</span>` : ""}` : "–"}</td>
         <td><span class="st-badge ${cls}">${esc(text)}</span></td><td class="num">${fmt(r.prompt)}</td>
         <td class="num">${fmt(r.reused)}</td><td class="num"${apTitle}>${approx}${fmt(r.out)}</td><td class="num">${fmt(r.pre)}</td><td class="num">${fmt(r.dec, 1)}</td>
-        <td class="num">${hit}</td><td class="num">${fmt(r.dur, 1)} s</td></tr>`;
+        <td class="num">${hit}</td><td class="num"${r.disk != null ? ` title="the conversation was restored from disk before this request"` : ""}>${r.disk != null ? `${fmt(r.disk, 0)} ms` : "–"}</td><td class="num">${fmt(r.dur, 1)} s</td></tr>`;
     }).join("");
   }
   const all = $("req-all");
@@ -532,12 +560,22 @@ function render(s) {
   // engine details: one column per engine
   const factCols = EIDS.map((e) => {
     const st = ST[e];
-    return [`${engTag[e]} · ${((names[e] || {}).sub || "").split(" · ")[0]}`, [
+    const m = META[e], b = BOOT[e];
+    return [`${engTag[e]} · Strata :${m.port || "?"}`, [
+      ["Status", b ? (b.state === "starting" ? `starting · ${b.phase} · ${Math.round(b.pct)}%` : b.phase) : "serving"],
+      ["Model", m.model || null],
+      ["Engine", m.version ? `Strata ${m.version}` : null],
+      ["GPU", m.gpu_name ? `${m.gpu_name.replace(/^NVIDIA (GeForce )?/, "")} (idx ${m.gpu_index})` : null],
+      ["Context window", m.ctx ? `${m.ctx_label} (${fmt(m.ctx)})${m.rope ? ` · YaRN ×${m.rope} over ${ctxfmt(m.trained_ctx || 262144)} trained` : " · native"}` : null],
+      ["KV cache", m.kv ? `${m.kv} · ${m.slots} slot${m.slots > 1 ? "s" : ""}` : null],
+      ["Images", m.images == null ? null : m.images ? "yes" : "no"],
+      ["Unit · preset", m.unit ? `${m.unit} · ${m.preset || "?"}` : null],
+      ["Pending restart", (m.pending || []).length ? m.pending.join(", ") : null],
       ["Decode mean", st._c && st._c.dec_s > 1 ? `${fmt(st._c.gen / st._c.dec_s, 1)} t/s since start` : null],
       ["Prefill mean", st._c && st._c.pre_s > 1 ? `${fmt((st._c.prompt - st._c.reused) / st._c.pre_s, 0)} t/s since start` : null],
       ["Prefix reuse", st.prefix_pct != null ? `${fmt(st.prefix_pct)}%` : null],
       ["MTP accepted", st.mtp_pct != null ? `${fmt(st.mtp_pct)}% of drafts` : null],
-      ["Context", st.ctx_max ? `${ctxfmt(st.ctx_max)} · ${fmt(st.ctx_pct || 0)}% held` : null],
+      ["Context held", st.ctx_max ? `${fmt(st.ctx_pct || 0)}% of ${ctxfmt(st.ctx_max)}` : null],
       ["Experts in VRAM", st.expert_slots ? `${fmt(st.expert_slots)} · ${gb((st.expert_cache_mib || 0) * 1048576)} GB` : null],
       ["Requests", st.requests != null ? fmt(st.requests) : null],
       ["Service", (s.services || {})[e] || null],
@@ -578,17 +616,21 @@ async function loadSummary() {
   }
   try {
     const s = await (await fetch(url)).json();
-    const names = {main: "FN 5090", l2: "FN 3090 #1", l3: "FN 3090 #2"};
+    const names = window.ENGTAG || {main: "main", l2: "lane2", l3: "lane3"};
     $("sum-span").textContent = fmtSpan(s.from, s.to);
     $("sum-body").innerHTML = ["main", "l2", "l3"].map((e) => {
-      const x = s.engines[e] || {};
+      const x = s.engines[e] || {}, d = x.disk || {};
+      const disk = d.saves || d.restores
+        ? `<span title="restored from disk ${fmt(d.restores)}x, parked ${fmt(d.saves)}x, RAM-guard refusals ${fmt(d.fails)}x, ${fmt(d.restored_tokens)} tokens loaded back, ${gb(d.bytes)} written, avg restore ${fmt(d.avg_restore_ms, 0)} ms">↓${fmt(d.restores)} ↑${fmt(d.saves)}${d.fails ? ` <span class="st-badge st-badge--queued">${fmt(d.fails)}✗</span>` : ""}<br><span class="muted">${d.hit_pct != null ? `${d.hit_pct}% · ${fmt(d.avg_restore_ms, 0)} ms` : ""}</span></span>`
+        : "–";
       return `<tr class="m-${e}"><td><span class="req-src m-${e}">${names[e]}</span></td><td class="num">${fmt(x.requests)}</td>
         <td class="num">${fmt(x.computed)}${x.reused ? ` <span class="muted">+${kfmt(x.reused)}</span>` : ""}</td>
         <td class="num">${fmt(x.output)}</td>
         <td class="num">${fmt(x.prefill_tps)}</td><td class="num">${fmt(x.decode_tps, 1)}</td>
-        <td class="num">${fmt(x.avg_prompt)} / ${fmt(x.avg_output)}</td></tr>`;
+        <td class="num">${fmt(x.avg_prompt)} / ${fmt(x.avg_output)}</td>
+        <td class="num">${disk}</td></tr>`;
     }).join("");
-  } catch (e) { $("sum-body").innerHTML = `<tr><td colspan="7" class="muted">summary unavailable</td></tr>`; }
+  } catch (e) { $("sum-body").innerHTML = `<tr><td colspan="8" class="muted">summary unavailable</td></tr>`; }
 }
 document.querySelectorAll("[data-sum]").forEach((b) => b.addEventListener("click", () => {
   SUMR = b.dataset.sum;
@@ -601,7 +643,8 @@ $("sum-custom").addEventListener("change", () => loadSummary());
 async function poll() {
   try {
     const r = await fetch("api/state");
-    if (r.ok) { lastState = await r.json(); failures = 0; if (RANGE !== "live" && (!histData || Date.now() - histGot > 60000)) await loadHist(); render(lastState); }
+    if (r.ok) { lastState = await r.json(); failures = 0; if (RANGE !== "live" && (!histData || Date.now() - histGot > 60000)) await loadHist(); render(lastState);
+      if (!window.SUM_NAMED) { window.SUM_NAMED = 1; loadSummary(); } }
     else throw new Error(`HTTP ${r.status}`);
   } catch (e) {
     if (++failures === 3) setPill("error", "Monitor not reachable");
@@ -615,59 +658,29 @@ poll();
 
 MON_BODY = """
   <div class="monitor">
-    <div class="monitor-row" style="grid-template-columns:repeat(3,1fr)">
-      <div class="st-card state-card eng-card m-main">
+    <div class="monitor-row eng-row">
+""" + "".join(f"""      <div class="st-card state-card eng-card m-{e}" id="{e}-card">
         <div class="state-card__head">
-          <span class="card-title"><span class="req-src m-main">FN 5090</span> <span class="muted">Strata :8001 · RTX 5090 · 256K</span></span>
-          <span class="badges" id="main-badges">
+          <span class="card-title"><span class="req-src m-{e}" id="{e}-tag">{e}</span></span>
+          <span class="badges" id="{e}-badges">
             <span class="st-badge" data-s="idle">Idle</span>
             <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
             <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
             <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
+            <span class="st-badge st-badge--queued opt" data-s="starting">Starting</span>
+            <span class="st-badge st-badge--error opt" data-s="down">Down</span>
           </span>
         </div>
-        <div class="state-card__row"><span id="main-label">Waiting for a request</span><span class="muted" id="main-detail"></span></div>
-        <div class="st-progress" id="main-progress"><div class="st-progress__bar" id="main-bar" style="width:0%"></div></div>
+        <div class="eng-sub muted" id="{e}-sub"></div>
+        <div class="state-card__row"><span id="{e}-label">Waiting for a request</span><span class="muted" id="{e}-detail"></span></div>
+        <div class="st-progress" id="{e}-progress"><div class="st-progress__bar" id="{e}-bar" style="width:0%"></div></div>
+        <div class="eng-note" id="{e}-note"></div>
         <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="main-dec">–</span><small>decode t/s</small><small class="tps-last" id="main-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="main-pre">–</span><small>prefill t/s</small><small class="tps-last" id="main-pre-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="{e}-dec">–</span><small>decode t/s</small><small class="tps-last" id="{e}-dec-last"></small></div>
+          <div class="eng-tps__m"><span class="st-metric__value" id="{e}-pre">–</span><small>prefill t/s</small><small class="tps-last" id="{e}-pre-last"></small></div>
         </div>
       </div>
-      <div class="st-card state-card eng-card m-l2">
-        <div class="state-card__head">
-          <span class="card-title"><span class="req-src m-l2">FN 3090 #1</span> <span class="muted">Strata :8003 · RTX 3090 (idx 1) · 128K</span></span>
-          <span class="badges" id="l2-badges">
-            <span class="st-badge" data-s="idle">Idle</span>
-            <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
-            <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
-            <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
-          </span>
-        </div>
-        <div class="state-card__row"><span id="l2-label">Waiting for a request</span><span class="muted" id="l2-detail"></span></div>
-        <div class="st-progress" id="l2-progress"><div class="st-progress__bar" id="l2-bar" style="width:0%"></div></div>
-        <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="l2-dec">–</span><small>decode t/s</small><small class="tps-last" id="l2-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="l2-pre">–</span><small>prefill t/s</small><small class="tps-last" id="l2-pre-last"></small></div>
-        </div>
-      </div>
-      <div class="st-card state-card eng-card m-l3">
-        <div class="state-card__head">
-          <span class="card-title"><span class="req-src m-l3">FN 3090 #2</span> <span class="muted">Strata :8004 · RTX 3090 (idx 2) · 128K</span></span>
-          <span class="badges" id="l3-badges">
-            <span class="st-badge" data-s="idle">Idle</span>
-            <span class="st-badge st-badge--reading" data-s="reading">Reading</span>
-            <span class="st-badge st-badge--generating" data-s="generating">Generating</span>
-            <span class="st-badge st-badge--queued" data-s="queued">Queued</span>
-          </span>
-        </div>
-        <div class="state-card__row"><span id="l3-label">Waiting for a request</span><span class="muted" id="l3-detail"></span></div>
-        <div class="st-progress" id="l3-progress"><div class="st-progress__bar" id="l3-bar" style="width:0%"></div></div>
-        <div class="eng-tps">
-          <div class="eng-tps__m"><span class="st-metric__value" id="l3-dec">–</span><small>decode t/s</small><small class="tps-last" id="l3-dec-last"></small></div>
-          <div class="eng-tps__m"><span class="st-metric__value" id="l3-pre">–</span><small>prefill t/s</small><small class="tps-last" id="l3-pre-last"></small></div>
-        </div>
-      </div>
-    </div>
+""" for e in ("main", "l2", "l3")) + """    </div>
 
     <div class="rangebar">
       <span class="muted small">charts:</span>
@@ -685,26 +698,26 @@ MON_BODY = """
         <div class="req-head req-head--f"><span class="card-title">Recent requests</span>
           <span class="rangebar req-filters">
             <button class="st-btn st-btn--secondary on" data-reqf="all">all</button>
-            <button class="st-btn st-btn--secondary c-main" data-reqf="main">FN 5090</button>
-            <button class="st-btn st-btn--secondary c-l2" data-reqf="l2">FN 3090 #1</button>
-            <button class="st-btn st-btn--secondary c-l3" data-reqf="l3">FN 3090 #2</button>
+            <button class="st-btn st-btn--secondary c-main" data-reqf="main" data-lbl="main">main</button>
+            <button class="st-btn st-btn--secondary c-l2" data-reqf="l2" data-lbl="l2">lane2</button>
+            <button class="st-btn st-btn--secondary c-l3" data-reqf="l3" data-lbl="l3">lane3</button>
           </span>
           <button class="st-btn st-btn--secondary" id="req-all" style="visibility:hidden">Show all</button></div>
         <div class="table-wrap" id="req-wrap">
           <table class="st-table">
-            <thead><tr><th>Time · model</th><th>Status</th><th class="num">Prompt</th><th class="num">Reused</th><th class="num">Output</th>
+            <thead><tr><th>Time · model</th><th title="LiteLLM session id (first 12 chars) and the conversation key the auto-sessions park under">Session</th><th>Status</th><th class="num">Prompt</th><th class="num">Reused</th><th class="num">Output</th>
               <th class="num" title="New prompt tokens per second, excluding reused cache tokens (engine prompt time)">Prefill t/s</th><th class="num">Decode t/s</th>
-              <th class="num" title="The share of the experts looked up that were already in VRAM">VRAM hit rate</th><th class="num">Duration</th></tr></thead>
-            <tbody id="req-body"><tr><td colspan="9" class="muted">No requests yet</td></tr></tbody>
+              <th class="num" title="The share of the experts looked up that were already in VRAM">VRAM hit rate</th><th class="num" title="How long the conversation was restored from disk (auto-sessions) before this request">Disk</th><th class="num">Duration</th></tr></thead>
+            <tbody id="req-body"><tr><td colspan="11" class="muted">No requests yet</td></tr></tbody>
           </table>
         </div>
-        <p class="muted req-totals" id="req-totals">Requests are kept 30 days (the totals card below sums any period).</p>
+        <p class="muted req-totals" id="req-totals">Requests are kept 90 days — the History tab searches all of them (the totals card below sums any period).</p>
       </div>
     </div>
 
     <div class="monitor-row">
       <div class="st-card ctx-card">
-        <span class="card-title">Context fill · FN 5090</span>
+        <span class="card-title">Context fill · <span data-lbl="main">main</span></span>
         <div class="ctx-gauge">
           <svg class="st-gauge" viewBox="0 0 120 120" aria-hidden="true">
             <circle class="st-gauge__track" cx="60" cy="60" r="50" fill="none" stroke-width="10" stroke-linecap="round"
@@ -714,11 +727,11 @@ MON_BODY = """
           </svg>
           <div class="ctx-gauge__label"><span class="ctx-gauge__pct" id="ctx-pct">0%</span><span class="muted" id="ctx-sub">&ndash;</span></div>
         </div>
-        <div class="bar-row"><span>FN 5090 experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
+        <div class="bar-row"><span><span data-lbl="main">main</span> experts in VRAM</span><span class="muted" id="slots-text">&ndash;</span></div>
         <div class="st-progress"><div class="st-progress__bar" id="slots-bar" style="width:0%"></div></div>
-        <div class="bar-row"><span>FN 3090 #1 context held</span><span class="muted" id="ctx-l2-text">&ndash;</span></div>
+        <div class="bar-row"><span><span data-lbl="l2">lane2</span> context held</span><span class="muted" id="ctx-l2-text">&ndash;</span></div>
         <div class="st-progress" id="ctx-l2-progress"><div class="st-progress__bar" id="ctx-l2-bar" style="width:0%"></div></div>
-        <div class="bar-row"><span>FN 3090 #2 context held</span><span class="muted" id="ctx-l3-text">&ndash;</span></div>
+        <div class="bar-row"><span><span data-lbl="l3">lane3</span> context held</span><span class="muted" id="ctx-l3-text">&ndash;</span></div>
         <div class="st-progress" id="ctx-l3-progress"><div class="st-progress__bar" id="ctx-l3-bar" style="width:0%"></div></div>
         <div class="bar-row"><span>System RAM</span><span class="muted" id="ram-text">&ndash;</span></div>
         <div class="st-progress" id="ram-progress"><div class="st-progress__bar" id="ram-bar" style="width:0%"></div></div>
@@ -726,7 +739,7 @@ MON_BODY = """
         <div class="st-progress" data-tone="warn"><div class="st-progress__bar" id="temp-bar" style="width:0%"></div></div>
       </div>
       <div class="st-card cc-card" id="cc-card">
-        <div class="req-head"><span class="card-title">Conversation cache · FN 5090</span><span class="muted small" id="cc-sum"></span></div>
+        <div class="req-head"><span class="card-title">Conversation cache · <span data-lbl="main">main</span></span><span class="muted small" id="cc-sum"></span></div>
         <div class="cc-bars" id="cc-bars" hidden>
           <div><div class="bar-row"><span>Parked conversations</span><span class="muted" id="cc-slots-text">&ndash;</span></div>
             <div class="st-progress"><div class="st-progress__bar" id="cc-slots-bar" style="width:0%"></div></div></div>
@@ -738,8 +751,7 @@ MON_BODY = """
       </div>
     </div>
 
-    <div class="monitor-row row-half">
-      <div class="st-card">
+    <section class="st-card">
         <div class="req-head"><span class="card-title">Totals over a period</span>
           <span class="muted small" id="sum-span"></span></div>
         <div class="rangebar">
@@ -755,16 +767,16 @@ MON_BODY = """
         <div class="table-wrap">
           <table class="st-table">
             <thead><tr><th>Engine</th><th class="num">Requests</th><th class="num" title="prompt tokens computed fresh (+ reused from cache)">Prompt read</th>
-              <th class="num">Output</th><th class="num">Avg prefill t/s</th><th class="num">Avg decode t/s</th><th class="num" title="from per-request rows">Avg in / out</th></tr></thead>
-            <tbody id="sum-body"><tr><td colspan="7" class="muted">loading…</td></tr></tbody>
+              <th class="num">Output</th><th class="num">Avg prefill t/s</th><th class="num">Avg decode t/s</th><th class="num" title="from per-request rows">Avg in / out</th>
+              <th class="num" title="Auto-sessions disk cache: restores / saves, share of requests that came back from disk, average restore time, bytes parked">Disk cache</th></tr></thead>
+            <tbody id="sum-body"><tr><td colspan="8" class="muted">loading…</td></tr></tbody>
           </table>
         </div>
-      </div>
-      <div class="st-card">
-        <div class="req-head"><span class="card-title">Engine details</span></div>
-        <div id="eng-facts" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px"></div>
-      </div>
-    </div>
+    </section>
+    <section class="st-card">
+        <div class="req-head"><span class="card-title">Engine details</span><span class="muted small">read live from each lane: /metrics, its unit and launch preset</span></div>
+        <div id="eng-facts"></div>
+    </section>
   </div>
   <style>
     .rangebar { display:flex; gap:8px; align-items:center; margin:0 0 10px; flex-wrap:wrap; }
@@ -1070,6 +1082,7 @@ def page(title, active, body, js, extra_css=""):
 {CSS}
 /* rig additions on top of the kit */
 .req-src{{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--st-ink-muted)}}
+.sess{{font-size:var(--st-fs-xs);white-space:nowrap}}
 a.st-tab{{text-decoration:none}}
 .updated-at{{font-size:var(--st-fs-xs);color:var(--st-ink-muted)}}
 .st-pill[data-state="alert"] .st-pill__dot{{background:var(--st-danger);box-shadow:0 0 0 4px var(--st-danger-tint)}}
@@ -1111,7 +1124,21 @@ a.st-tab{{text-decoration:none}}
 .speed-values{{display:flex;gap:var(--st-s-5);align-items:baseline}}
 .speed-prefill .st-metric__value{{font-size:var(--st-fs-lg)}}
 .mchart{{width:100%;height:112px;margin-top:2px}}
+/* lane cards: equal thirds, the GPU/context line under the title, boot progress */
+.eng-row{{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1100px){{.eng-row{{grid-template-columns:minmax(0,1fr)}}}}
+.eng-card .state-card__head{{flex-wrap:wrap;row-gap:6px}}
+.eng-sub{{font-size:var(--st-fs-xs);margin:-2px 0 8px;line-height:1.35}}
+.eng-note{{font-size:var(--st-fs-xs);color:var(--st-warn);min-height:0;margin-top:4px}}
+.eng-note:empty{{display:none}}
+.eng-card.booting .st-progress__bar{{transition:width .9s linear}}
+.req-src{{white-space:nowrap;display:inline-block}}
+.st-table th{{white-space:nowrap}}
+#eng-facts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px 28px}}
+#eng-facts .facts{{grid-template-columns:minmax(110px,auto) minmax(0,1fr) !important}}
+#eng-facts .facts dd{{overflow-wrap:anywhere}}
 .hchart{{width:100%;height:46px;margin-top:2px}}
+{extra_css}
 </style>
 {PREPAINT}
 </head>
@@ -1132,6 +1159,97 @@ a.st-tab{{text-decoration:none}}
 </html>
 """
 
+HIST_CSS = """
+.sess{font-size:var(--st-fs-xs);white-space:nowrap}
+#hq{background:var(--st-bg);color:var(--st-ink);border:1px solid var(--st-border);border-radius:var(--st-r-md);padding:6px 10px;font:inherit;font-size:var(--st-fs-sm);min-width:240px}
+.h-actions{display:flex;gap:10px;align-items:center;margin-top:8px}
+"""
+
+HIST_BODY = """    <section class="view-section">
+      <div class="st-card req-card" style="grid-column:1/-1">
+        <div class="req-head req-head--f"><span class="card-title">Request history</span>
+          <span class="rangebar">
+            <button class="st-btn st-btn--secondary" data-hr="1h">1h</button>
+            <button class="st-btn st-btn--secondary" data-hr="6h">6h</button>
+            <button class="st-btn st-btn--secondary on" data-hr="24h">24h</button>
+            <button class="st-btn st-btn--secondary" data-hr="7d">7d</button>
+            <button class="st-btn st-btn--secondary" data-hr="30d">30d</button>
+            <button class="st-btn st-btn--secondary" data-hr="all">all</button>
+          </span>
+          <span class="rangebar req-filters">
+            <button class="st-btn st-btn--secondary on" data-he="all">all</button>
+            <button class="st-btn st-btn--secondary c-main" data-he="main">main</button>
+            <button class="st-btn st-btn--secondary c-l2" data-he="l2">lane2</button>
+            <button class="st-btn st-btn--secondary c-l3" data-he="l3">lane3</button>
+          </span>
+          <input id="hq" type="search" placeholder="session / conversation key / status" autocomplete="off">
+        </div>
+        <div class="table-wrap all">
+          <table class="st-table">
+            <thead><tr><th>Time</th><th>Lane</th><th title="LiteLLM session id + conversation key">Session</th><th>Status</th>
+              <th class="num">Prompt</th><th class="num">Reused</th><th class="num">Output</th>
+              <th class="num">Prefill t/s</th><th class="num">Decode t/s</th>
+              <th class="num" title="conversation restored from disk (auto-sessions) before this request: how long it took">Disk</th>
+              <th class="num">Duration</th></tr></thead>
+            <tbody id="h-body"><tr><td colspan="11" class="muted">loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="h-actions"><span class="muted small" id="h-count"></span>
+          <button class="st-btn st-btn--secondary" id="h-more" style="visibility:hidden">200 more</button>
+          <span class="muted small">rows are kept 90 days · updated <span id="h-updated">–</span></span></div>
+      </div>
+    </section>
+"""
+
+HIST_JS = HELPERS + THEME_JS + r"""
+let HR = "24h", HE = "all", HQ = "", ROWS = [], TOTAL = 0;
+const LBL = {main: "main", l2: "lane2", l3: "lane3"};
+const badge = {stop: ["", "Done"], length: ["", "Max tokens"], cancel: ["st-badge--queued", "Stopped"],
+               disconnect: ["st-badge--queued", "Closed"], error: ["st-badge--error", "Error"]};
+function render(){
+  $("h-count").textContent = `${fmt(ROWS.length)} of ${fmt(TOTAL)} requests`;
+  $("h-body").innerHTML = ROWS.length ? ROWS.map((r) => {
+    const [cls, text] = badge[r.status] || [r.status && r.status !== "stop" ? "st-badge--error" : "", r.status || "–"];
+    const t = new Date((r.ts || 0) * 1000).toLocaleString([], {month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"});
+    const hit = r.hit == null ? "–" : `${(r.hit * 100).toFixed(1)}%`;
+    const sess = r.sess ? `<span title="session ${esc(r.sess)}${r.conv ? ` · conversation ${esc(r.conv)}` : ""}">${esc(r.sess.slice(0, 14))}${r.conv ? ` <span class="muted">c${esc(r.conv.slice(0, 6))}</span>` : ""}</span>` : "–";
+    return `<tr class="m-${r.eng}"><td>${esc(t)}</td><td><span class="req-src m-${r.eng}">${LBL[r.eng] || esc(r.eng)}</span></td>
+      <td class="sess">${sess}</td><td><span class="st-badge ${cls}">${esc(text)}</span></td>
+      <td class="num">${fmt(r.prompt)}</td><td class="num">${fmt(r.reused)}</td><td class="num">${fmt(r.output)}</td>
+      <td class="num">${fmt(r.prefill_tps)}</td><td class="num">${fmt(r.decode_tps, 1)}</td>
+      <td class="num">${r.disk_ms != null ? `${fmt(r.disk_ms, 0)} ms` : "–"}</td><td class="num">${fmt(r.dur, 1)} s</td></tr>`;
+  }).join("") : `<tr><td colspan="11" class="muted">nothing in this window</td></tr>`;
+  $("h-more").style.visibility = ROWS.length < TOTAL ? "visible" : "hidden";
+  $("h-updated").textContent = new Date().toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+}
+async function load(more){
+  try {
+    const p = new URLSearchParams({range: HR, eng: HE, q: HQ, limit: 200, offset: more ? ROWS.length : 0});
+    const s = await (await fetch(`api/requests?${p}`)).json();
+    if (!more) ROWS = [];
+    ROWS = ROWS.concat(s.rows || []);
+    TOTAL = s.total || 0;
+    render();
+  } catch (e) { $("h-body").innerHTML = `<tr><td colspan="11" class="muted">history unavailable</td></tr>`; }
+}
+document.querySelectorAll("[data-hr]").forEach((b) => b.addEventListener("click", () => {
+  HR = b.dataset.hr;
+  document.querySelectorAll("[data-hr]").forEach((x) => x.classList.toggle("on", x === b));
+  load(false);
+}));
+document.querySelectorAll("[data-he]").forEach((b) => b.addEventListener("click", () => {
+  HE = b.dataset.he;
+  document.querySelectorAll("[data-he]").forEach((x) => x.classList.toggle("on", x === b));
+  load(false);
+}));
+let hqt; $("hq").addEventListener("input", () => { clearTimeout(hqt); hqt = setTimeout(() => { HQ = $("hq").value.trim(); load(false); }, 300); });
+$("h-more").onclick = () => load(true);
+load(false);
+setInterval(() => { if (!ROWS.length || document.hasFocus()) load(false); }, 15000);
+"""
+
 (HERE / "index.html").write_text(page("Rig · monitor", "monitor", MON_BODY, MON_JS))
 (HERE / "hw.html").write_text(page("Rig · hardware", "hw", HW_BODY, HW_JS))
-print("wrote index.html + hw.html")
+(HERE / "history.html").write_text(page("Rig · history", "hist", HIST_BODY, HIST_JS, HIST_CSS))
+print("wrote index.html + hw.html + history.html")

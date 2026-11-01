@@ -11,11 +11,22 @@ API:  /api/state   live gauges + history ring (RAM) + recent requests (one merge
       /api/history?range=1h|24h|7d|30d | ?from=T&to=T   persisted points downsampled
       /api/summary?range=... | ?from=T&to=T            per-engine totals over a window
       /api/hw?range=...                                hardware snapshots
-      /, /hw  pages (index.html / hw.html read per request)
+      /api/requests?range=...|from/to&eng=&q=&limit=&offset=   persisted request rows, newest first
+      /, /hw, /history  pages (index.html / hw.html / history.html read per request)
+
+Request attribution: the LiteLLM affinity hook (rig/litellm/rig_affinity.py) appends one JSONL
+line per completion to RIG_REQLOG (session id + conversation key = sha1 of the first user message,
+the same key the engine's auto-sessions park under). The monitor tails that log and each lane's
+serve log (auto-sessions "restored ... in N ms" lines) and joins both into the request rows:
+sess/conv columns and disk_ms = how long that conversation took to come back from disk.
 
 Env: STRATA_URL (main), L2_URL, L3_URL, STRATA_KEY (JSON with api_key, shared by all lanes),
 MAIN_UNIT, L2_UNIT, L3_UNIT, HIST_DB, PORT, PROM_URL (Prometheus with the rig:power_* /
-rig:electricity_* recording rules, docs/14).
+rig:electricity_* recording rules, docs/14), LAUNCH_DIR / PRESET_DIR (Strata launch state + presets).
+Lane labels, model, context, KV, slots, YaRN and GPU are read from the lanes themselves (/metrics
+engine + hardware_static, the unit's --preset, its launch state) — nothing per-config is hardcoded.
+Boot progress per lane (/api/state eng.<id>.boot) comes from the unit state + the stage markers the
+engine writes into its log on every start.
 """
 import json, os, re, sqlite3, subprocess, threading, time
 from collections import deque
@@ -38,15 +49,18 @@ HIST_DB = os.environ.get("HIST_DB", str(Path(__file__).with_name("hist.db")))
 HISTORY = 900
 ROLL_S = 60           # rollup bucket
 KEEP1 = 86400         # 1s points: 24h
-KEEP60 = 30 * 86400   # rollups + request rows: 30 days
+KEEP60 = 30 * 86400   # rollups: 30 days
+KEEPREQ = 90 * 86400  # request rows: 90 days
 PAGE = Path(__file__).with_name("index.html")
 
-# engine table: the page and the request rows label by these keys (all three are Strata lanes)
-ENG = {"main": {"label": "FN 5090", "sub": "Strata :8001 · RTX 5090 · 256K"},
-       "l2": {"label": "FN 3090 #1", "sub": "Strata :8003 · RTX 3090 (idx 1) · 128K"},
-       "l3": {"label": "FN 3090 #2", "sub": "Strata :8004 · RTX 3090 (idx 2) · 128K"}}
+# engine table: keys stay fixed (history continuity); labels/subtitles below are only the fallback before the
+# first scrape — the live ones come from lane_meta()/lane_names() (GPU, context, KV, slots read from the lanes)
+ENG = {"main": {"label": "FN main", "sub": "Strata :8001"},
+       "l2": {"label": "FN lane2", "sub": "Strata :8003"},
+       "l3": {"label": "FN lane3", "sub": "Strata :8004"}}
 LANES = {"main": (STRATA, MAIN_UNIT), "l2": (L2_URL, L2_UNIT), "l3": (L3_URL, L3_UNIT)}
 CKEY = {"main": "m", "l2": "l2", "l3": "l3"}   # key in point["counters"] (main stays "m": history continuity)
+_ui, _meta, _names, _boot, _up_prev = {}, {}, {}, {}, {}   # per lane: unit info, description, labels, boot progress
 
 history = deque(maxlen=HISTORY)
 _last_gs = []
@@ -92,7 +106,7 @@ def db_prune(now):
     with DB_LOCK, db() as con:
         con.execute("DELETE FROM hist1 WHERE t < ?", (now - KEEP1,))
         con.execute("DELETE FROM hist60 WHERE t < ?", (now - KEEP60,))
-        con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEP60,))
+        con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEPREQ,))
 
 
 def db_backfill():
@@ -340,7 +354,7 @@ def strata_rows(j, eid):
     rows = []
     for r in sorted((j or {}).get("requests", []) or [], key=lambda x: float(x.get("time") or 0)):
         prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
-        rows.append({"ts": float(r.get("time") or 0), "eng": eid, "status": r.get("finish"),
+        rows.append({"ts": float(r.get("time") or 0), "eng": eid, "id": r.get("id"), "status": r.get("finish"),
                      "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
                      "output": r.get("output_tokens"), "prefill_tps": prefill,
                      "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
@@ -350,6 +364,320 @@ def strata_rows(j, eid):
 
 def service_state(unit):
     return subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True).stdout.strip()
+
+
+# ------------------------------------------------------------- lane description + boot progress (all dynamic)
+LAUNCH_DIR = Path(os.path.expanduser(os.environ.get("LAUNCH_DIR", "~/.local/state/strata/launch")))
+PRESET_DIR = Path(os.path.expanduser(os.environ.get("PRESET_DIR", "~/.config/strata/launch-presets")))
+
+
+def unit_info(unit):
+    """systemd view of a lane unit: state, sub-state, when this run began, and the Strata preset it launches."""
+    try:
+        out = subprocess.run(["systemctl", "show", "-p", "ActiveState,SubState,InactiveExitTimestamp,ExecStart",
+                              "--timestamp=unix", unit], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return {}
+    d = {}
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        d[k] = v
+    m = re.search(r"--preset\s+(\S+)", d.get("ExecStart", ""))
+    ts = d.get("InactiveExitTimestamp", "").lstrip("@")
+    try:
+        since = float(ts)
+    except ValueError:
+        since = None
+    return {"active": d.get("ActiveState") or None, "sub": d.get("SubState") or None, "since": since,
+            "preset": m.group(1) if m else None}
+
+
+def _json_file(path):
+    try:
+        d = json.load(open(path))
+    except (OSError, ValueError):
+        return {}
+    if isinstance(d, dict):
+        d.pop("api_key", None)
+        return d
+    return {}
+
+
+def _arg(args, name):
+    try:
+        i = args.index(name)
+        return args[i + 1] if i + 1 < len(args) else None
+    except ValueError:
+        return None
+
+
+def ctx_label(n):
+    if not n:
+        return None
+    n = int(n)
+    return f"{n // 1048576}M" if n % 1048576 == 0 else f"{round(n / 1024)}K"
+
+
+def lane_meta(eid, raw, ui, gpu_list):
+    """What this lane runs NOW: live engine block first, the last launch's args next, the preset last
+    (a preset value that differs from the live one = a change waiting for a restart)."""
+    preset = ui.get("preset")
+    st = _json_file(LAUNCH_DIR / f"{preset}.json") if preset else {}
+    pr = _json_file(PRESET_DIR / f"{preset}.json") if preset else {}
+    args = st.get("args") or []
+    eng = (raw or {}).get("engine") or {}
+    hs = (raw or {}).get("hardware_static") or {}
+    live = (raw or {}).get("live") or {}
+    gidx = st.get("gpu") if isinstance(st.get("gpu"), int) else ((pr.get("gpus") or [None])[0])
+    gname = hs.get("gpu_name") or next((g.get("name") for g in gpu_list or []
+                                        if g.get("index") is not None and int(g["index"]) == gidx), None)
+    ctx = eng.get("context") or eng.get("max_context") or _arg(args, "--max-context") or pr.get("context")
+    kv = eng.get("kv") or _arg(args, "--kv") or pr.get("kv") or "int8"
+    slots = eng.get("batch_slots") or live.get("parallel") or pr.get("parallel") or 1
+    rope = _arg(args, "--rope-scale") if _arg(args, "--rope-scaling") not in (None, "none") else None
+    url = LANES[eid][0]
+    port = st.get("port") or pr.get("port") or (int(url.rsplit(":", 1)[1]) if url.rsplit(":", 1)[-1].isdigit() else None)
+    pending = []
+    if pr and raw:
+        if pr.get("context") and ctx and int(pr["context"]) != int(ctx):
+            pending.append(f"context {ctx_label(pr['context'])}")
+        if (pr.get("kv") or "int8") != kv:
+            pending.append(f"KV {pr.get('kv') or 'int8'}")
+        if pr.get("parallel") and int(pr["parallel"]) != int(slots):
+            pending.append(f"{pr['parallel']} slots")
+    return {"model": eng.get("model") or st.get("model_name"), "version": eng.get("version"),
+            "ctx": int(ctx) if ctx else None, "ctx_label": ctx_label(ctx), "kv": kv, "slots": int(slots),
+            "rope": float(rope) if rope else None, "images": eng.get("images") if raw else pr.get("vision") == "on",
+            "gpu_name": gname, "gpu_index": gidx, "port": port, "preset": preset, "unit": LANES[eid][1],
+            "log": st.get("log") or str(LAUNCH_DIR / f"{preset}.engine.log"), "pending": pending,
+            "arena_mib": eng.get("arena_mib"), "trained_ctx": 262144 if rope else None}
+
+
+def lane_names(metas):
+    """Card labels from the GPU each lane runs on: 'FN 5090', 'FN 3090 #1', 'FN 3090 #2' (numbered by GPU index)."""
+    short = {}
+    for eid, m in metas.items():
+        mm = re.search(r"(\d{4})", m.get("gpu_name") or "")
+        short[eid] = mm.group(1) if mm else (m.get("gpu_name") or eid)
+    out = {}
+    for eid, m in metas.items():
+        same = sorted((e for e in metas if short[e] == short[eid]), key=lambda e: metas[e].get("gpu_index") or 0)
+        label = f"FN {short[eid]}" + (f" #{same.index(eid) + 1}" if len(same) > 1 else "")
+        gpu = (m.get("gpu_name") or "").replace("NVIDIA ", "").replace("GeForce ", "")
+        bits = [f":{m.get('port')}", gpu,
+                (m.get("ctx_label") or "?") + (f" YaRN×{m['rope']:g}" if m.get("rope") else ""),
+                f"KV {m.get('kv')}", f"{m.get('slots')} slot{'s' if m.get('slots', 1) > 1 else ''}"]
+        out[eid] = {"label": label, "sub": " · ".join(b for b in bits if b)}
+    return out
+
+
+# engine log markers of one start, in order: (regex, progress %, phase shown on the card)
+BOOT_STAGES = [
+    (r"engine started", 3, "starting the engine"),
+    (r"memory guard:", 6, "checking RAM"),
+    (r"MiB of weights loaded", 12, "loading weights"),
+    (r"KV streaming: \d+ of", 16, "allocating the KV cache"),
+    (r"generate: GPU \d+:", 20, "copying experts into the RAM arena"),   # the long step (~47 GiB)
+    (r"expert arena:", 62, "pinning experts for the GPU"),
+    (r"generate: loaded [\d.]+ GiB at", 70, "experts loaded"),
+    (r"expert cache \d+ slots,", 74, "filling the GPU expert cache"),
+    (r"pre-filled \d+ of \d+ slots", 84, "expert cache filled"),
+    (r"session is up", 88, "warming up"),
+    (r"VRAM free with everything loaded", 93, "capturing CUDA graphs"),
+    (r"captured the 1-token window", 100, "ready"),
+]
+RAM_WAIT = re.compile(r"needs ([\d.]+) GiB of RAM and ([\d.]+) GiB is available; waiting up to (\d+) s.*?(\d+) s so far")
+START_TS = re.compile(r"\[strata\] (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) engine started")
+_boot_seen = {}   # (eid, start ts, stage index) -> first time the monitor saw that stage (interpolates long stages)
+
+
+def _log_tail(path, nbytes=262144):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - nbytes))
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
+def boot_status(eid, raw, ui, meta, names):
+    """None when the lane is up and serving; otherwise {phase, pct, elapsed_s, detail, state} for the card."""
+    now = time.time()
+    active = ui.get("active")
+    text = _log_tail(meta.get("log")) if meta.get("log") else ""
+    k = text.rfind("engine started")
+    start_ts, stage, detail = None, -1, ""
+    if k >= 0:
+        block = text[text.rfind("\n", 0, k) + 1:]
+        m = START_TS.search(block)
+        if m:
+            start_ts = time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))
+        for i, (rx, _pct, _ph) in enumerate(BOOT_STAGES):
+            if re.search(rx, block):
+                stage = i
+        waits = RAM_WAIT.findall(block)
+        if waits and stage <= 1:
+            need, avail, cap, so_far = waits[-1]
+            detail = f"waiting for RAM: needs {need} GiB, {avail} GiB free ({so_far}/{cap} s)"
+    this_run = start_ts is not None and ui.get("since") is not None and start_ts >= ui["since"] - 5
+    if raw is not None and (stage == len(BOOT_STAGES) - 1 or not this_run or now - (start_ts or 0) > 1200):
+        return None                                     # serving
+    if active == "failed":
+        return {"state": "failed", "phase": "failed", "pct": 0, "elapsed_s": None,
+                "detail": f"unit {meta.get('unit')} failed"}
+    if active in ("inactive", "deactivating") and raw is None:
+        return {"state": "down", "phase": "stopping" if active == "deactivating" else "stopped", "pct": 0,
+                "elapsed_s": None, "detail": f"unit {meta.get('unit')} {active}"}
+    if not this_run:                                    # unit (re)started, no engine start in the log yet
+        since = ui.get("since")
+        if ui.get("sub") == "start-pre":
+            phase = f"waiting for {names.get('main', {}).get('label', 'main')}" if eid != "main" else "pre-start"
+        elif active == "activating":
+            phase = "launcher preparing"
+        else:
+            phase = "engine not answering"
+        return {"state": "starting" if active == "activating" else "down", "phase": phase, "pct": 1,
+                "elapsed_s": round(now - since) if since else None, "detail": ""}
+    rx, pct, phase = BOOT_STAGES[max(0, stage)]
+    key = (eid, start_ts, stage)
+    first = _boot_seen.setdefault(key, now)
+    if len(_boot_seen) > 200:
+        _boot_seen.clear()
+    if 0 <= stage < len(BOOT_STAGES) - 1:               # creep toward the next marker while a stage runs
+        nxt = BOOT_STAGES[stage + 1][1]
+        expect = 14.0 if phase.startswith("copying experts") else 6.0
+        pct = pct + (nxt - pct) * min(0.9, (now - first) / expect)
+    if detail:
+        phase = "waiting for RAM"
+    t0 = ui.get("since") or start_ts                  # count from the unit start: launcher prep is part of the wait
+    return {"state": "starting", "phase": phase, "pct": round(pct, 1),
+            "elapsed_s": round(now - t0) if t0 else None, "detail": detail}
+
+
+# ------------------------------------------------- request attribution (hook log + serve logs)
+REQLOG = Path(os.environ.get("RIG_REQLOG", "/var/lib/litellm/reqlog.jsonl"))
+RUNTIME_DIR = Path(os.path.expanduser(os.environ.get("RUNTIME_DIR", "~/.local/state/strata/runtime")))
+URL2EID = {url.rstrip("/"): eid for eid, (url, _u) in LANES.items()}
+RESTORE_RE = re.compile(r"auto sessions: restored (\d+) tokens from auto-([0-9a-f]{16})\.bin in ([\d.]+) ms")
+SAVE_RE = re.compile(r"auto sessions: saved (\d+) tokens \((\d+(?:\.\d+)?) GB\) to auto-([0-9a-f]{16})\.bin in ([\d.]+) ms")
+SFAIL_RE = re.compile(r"auto sessions: session file: not enough RAM to read it")
+
+_hooks = deque(maxlen=8000)       # attribution events, chronological, each consumed once
+_hook_off = [0]                   # byte offset in REQLOG
+_disk = {}                        # (eid, conv16) -> (ts, ms) latest disk restore seen
+_dsum = {e: {"saves": 0, "bytes": 0, "saved_tok": 0, "restores": 0, "rest_tok": 0,
+             "rest_ms": 0.0, "fails": 0} for e in ENG}   # cumulative auto-sessions activity
+_slog = {}                        # eid -> [offset, first_read]
+_enrich = {}                      # (eid, engine request id) -> (sess, conv, disk_ms): rows are re-scraped every tick
+_conv_lane = {}                   # conv16 -> eid: learned stickiness, for events with no url
+
+def _tail(path, off):
+    """Read complete new lines of a growing log; resync when the file shrank."""
+    try:
+        with open(path, "rb") as f:
+            size = f.seek(0, 2)
+            if size < off:
+                off = max(0, size - 262144)
+            f.seek(off)
+            data = f.read()
+    except OSError:
+        return off, []
+    nl = data.rfind(b"\n")
+    if nl < 0:
+        return off, []
+    return off + nl + 1, data[:nl].decode("utf-8", "replace").splitlines()
+
+def hook_events():
+    """Tail the LiteLLM hook's request log into _hooks: {t, sess, conv, eid|None, used}."""
+    _hook_off[0], lines = _tail(REQLOG, _hook_off[0])
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        sid = str(e.get("sid") or "")
+        sess, _, digest = sid.partition("|")
+        eid = URL2EID.get(str(e.get("url") or "").rstrip("/"))
+        conv = str(e.get("conv") or "")
+        if eid is None and conv:
+            eid = _conv_lane.get(conv)
+        if eid is None and str(e.get("model") or "") == "qwen3.8-flash-next-iq3_s":
+            eid = "main"
+        _hooks.append({"t": float(e.get("t") or 0), "sess": sess or sid, "conv": conv,
+                       "digest": digest, "eid": eid, "used": False})
+
+def serve_events(presets):
+    """Tail every lane's serve log for auto-sessions disk restores: (eid, conv) -> (ts, ms)."""
+    for eid, preset in presets.items():
+        if not preset:
+            continue
+        p = RUNTIME_DIR / ("launch-%s.server.log" % preset)
+        st = _slog.setdefault(eid, [0, True])
+        if not p.exists():
+            continue
+        first = st[1]
+        st[0], lines = _tail(p, st[0])
+        if not lines:
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = time.time()
+        for l in lines:
+            m = RESTORE_RE.search(l)
+            if m:
+                # events read on the first pass have no real timestamp: credit the file's mtime
+                _disk[(eid, m.group(2))] = (mtime if first else time.time(), float(m.group(3)))
+                d = _dsum[eid]
+                d["restores"] += 1
+                d["rest_tok"] += int(m.group(1))
+                d["rest_ms"] += float(m.group(3))
+                continue
+            m = SAVE_RE.search(l)
+            if m:
+                d = _dsum[eid]
+                d["saves"] += 1
+                d["saved_tok"] += int(m.group(1))
+                d["bytes"] += int(float(m.group(2)) * (1 << 30))
+                continue
+            if SFAIL_RE.search(l):
+                _dsum[eid]["fails"] += 1
+        st[1] = False
+
+def enrich_rows(rows, fresh):
+    """Attach session/conversation/disk-restore data to engine request rows.
+    fresh: set of (eid, id) newly seen this tick - only those consume hook events;
+    everything else is served from the cache (the engine re-lists its recent window every scrape)."""
+    for r in rows:
+        eid, rid = r["eng"], r.get("id")
+        key = (eid, rid)
+        if key in _enrich:
+            r["sess"], r["conv"], r["disk_ms"] = _enrich[key]
+            continue
+        if key not in fresh or not rid:
+            continue
+        lo = r["ts"] - (r.get("dur") or 0) - 90
+        hit = None
+        for h in reversed(_hooks):
+            if h["used"] or h["t"] > r["ts"] + 5 or h["t"] < lo:
+                continue
+            if h["eid"] not in (eid, None):
+                continue
+            hit = h
+            break
+        if hit:
+            hit["used"] = True
+            if hit["conv"]:
+                _conv_lane.setdefault(hit["conv"], eid)
+            d = _disk.pop((eid, hit["conv"]), None)   # one restore belongs to exactly one request
+            disk_ms = round(d[1], 1) if d and lo <= d[0] <= r["ts"] + 5 else None
+            val = (hit["sess"][:60], hit["conv"], disk_ms)
+            _enrich[key] = val
+            r["sess"], r["conv"], r["disk_ms"] = val
+    if len(_enrich) > 20000:
+        _enrich.clear()
 
 
 def _req_seed():
@@ -432,10 +760,33 @@ def sample(prev, prev_t, tick):
         point["sys_power"] = round((sum(point["gpu_power_by"]) + (en["cpu_w"] or 0) + (en["other_w"] or 0)) * en["psu_k"], 0)
 
     svc = None
-    if tick % 5 == 0:
-        svc = {eid: service_state(unit) for eid, (_url, unit) in LANES.items()}
+    booting = any(_boot.get(e) for e in ENG)
+    if tick % 5 == 0 or booting or not _ui:
+        for eid, (_url, unit) in LANES.items():
+            _ui[eid] = unit_info(unit) or _ui.get(eid, {})
+        svc = {eid: _ui[eid].get("active") or service_state(LANES[eid][1]) for eid in LANES}
+    up_now = {e: raws[e] is not None for e in ENG}
+    if tick % 10 == 0 or up_now != _up_prev or not _meta:
+        for eid in ENG:
+            prev_m = _meta.get(eid) or {}
+            m = lane_meta(eid, raws[eid], _ui.get(eid, {}), g or state.get("gpus") or [])
+            if raws[eid] is None and prev_m:        # engine down: keep what it last ran, the preset may be mid-edit
+                m = {**m, **{k: prev_m[k] for k in ("model", "version", "ctx", "ctx_label", "kv", "slots", "rope",
+                                                      "images", "arena_mib") if prev_m.get(k) is not None}}
+            _meta[eid] = m
+        _names.update(lane_names(_meta))
+        _up_prev.clear()
+        _up_prev.update(up_now)
+    if tick % 2 == 0 or booting:
+        for eid in ENG:
+            try:
+                _boot[eid] = boot_status(eid, raws[eid], _ui.get(eid, {}), _meta.get(eid, {}), _names)
+            except Exception as e:
+                print("boot status failed:", eid, repr(e), flush=True)
+                _boot[eid] = None
 
     rows = []
+    fresh = set()
     for eid in ENG:
         if not raws[eid]:
             continue
@@ -443,13 +794,23 @@ def sample(prev, prev_t, tick):
             rows.append(r)
             if r["ts"] > _req_ts[eid]:
                 _req_ts[eid] = r["ts"]
-                db_insert_req(r["ts"], eid, {k: r[k] for k in ("ts", "status", "prompt", "reused", "output",
-                                                               "dur", "decode_tps", "prefill_tps")})
+                fresh.add((eid, r.get("id")))
+    try:
+        hook_events()
+        serve_events({eid: _ui.get(eid, {}).get("preset") for eid in ENG})
+    except Exception as e:
+        print("attribution tail failed:", repr(e), flush=True)
+    enrich_rows(rows, fresh)
+    point["disk"] = {eid: dict(_dsum[eid]) for eid in ENG}
+    for r in rows:
+        if (r["eng"], r.get("id")) in fresh:
+            db_insert_req(r["ts"], r["eng"], r)
 
     with lock:
         history.append(point)
         state["eng"] = {eid: {"live": raws[eid] or state["eng"][eid].get("live"),
-                              "stats": stats[eid] or state["eng"][eid]["stats"]} for eid in ENG}
+                              "stats": stats[eid] or state["eng"][eid]["stats"],
+                              "meta": _meta.get(eid), "boot": _boot.get(eid)} for eid in ENG}
         state["host"] = h
         state["hw"] = hw
         state["energy"] = _energy
@@ -517,7 +878,7 @@ def rollup_and_prune():
             con.execute("DELETE FROM hist1 WHERE t < ?", (now - KEEP1,))
             con.execute("DELETE FROM hist60 WHERE t < ?", (now - KEEP60,))
             con.execute("DELETE FROM hw60 WHERE t < ?", (now - KEEP60,))
-            con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEP60,))
+            con.execute("DELETE FROM reqs WHERE t < ?", (now - KEEPREQ,))
     except sqlite3.Error as e:
         print("rollup failed:", repr(e), flush=True)
 
@@ -580,8 +941,12 @@ def api_summary(qs):
     ckeys = [CKEY[e] for e in ENG]
     prev_c = {e: None for e in ckeys}
     acc = {e: {"req": 0.0, "prompt": 0.0, "reused": 0.0, "gen": 0.0, "pre_s": 0.0, "dec_s": 0.0} for e in ckeys}
+    dacc = {e: {"saves": 0.0, "bytes": 0.0, "saved_tok": 0.0, "restores": 0.0, "rest_tok": 0.0,
+                "rest_ms": 0.0, "fails": 0.0} for e in ENG}
+    dprev = {e: None for e in ENG}
     for (j,) in rows:
-        cs = json.loads(j).get("counters") or {}
+        p = json.loads(j)
+        cs = p.get("counters") or {}
         for e in ckeys:
             c1 = cs.get(e)
             if not c1:
@@ -593,14 +958,32 @@ def api_summary(qs):
                     if d > 0:  # engine restart resets the counters -> skip this delta
                         acc[e][k] += d
             prev_c[e] = c1
+        ds = p.get("disk") or {}
+        for e in ENG:
+            c1 = ds.get(e)
+            if not c1:
+                continue
+            c0 = dprev[e]
+            if c0:
+                for k in dacc[e]:
+                    d = c1.get(k, 0) - c0.get(k, 0)
+                    if d > 0:  # monitor restart resets these too: skip the delta
+                        dacc[e][k] += d
+            dprev[e] = c1
     for eng in ENG:
         s = acc[CKEY[eng]]
         prompt, reused = s["prompt"], s.get("reused", 0)
+        dk = dacc[eng]
         out["engines"][eng] = {
             "requests": round(s["req"]), "prompt": round(prompt), "reused": round(reused),
             "computed": round(prompt - reused), "output": round(s["gen"]),
             "prefill_tps": round((prompt - reused) / s["pre_s"]) if s["pre_s"] > 1 else None,
-            "decode_tps": round(s["gen"] / s["dec_s"], 1) if s["dec_s"] > 1 else None}
+            "decode_tps": round(s["gen"] / s["dec_s"], 1) if s["dec_s"] > 1 else None,
+            "disk": {"saves": round(dk["saves"]), "restores": round(dk["restores"]),
+                     "fails": round(dk["fails"]), "bytes": round(dk["bytes"]),
+                     "saved_tokens": round(dk["saved_tok"]), "restored_tokens": round(dk["rest_tok"]),
+                     "avg_restore_ms": round(dk["rest_ms"] / dk["restores"], 1) if dk["restores"] else None,
+                     "hit_pct": round(100 * dk["restores"] / s["req"], 1) if s["req"] else None}}
     rq = {e: [] for e in ENG}
     for eng, j in reqs:
         if eng not in rq:   # rows of retired engines stay in the db but are not reported
@@ -630,6 +1013,47 @@ def api_hw(qs):
     return {"from": t0, "to": t1, "points": pts}
 
 
+def api_requests(qs):
+    """Persisted request rows, newest first: ?range=..|from/to&eng=main|l2|l3&q=<session/conv/status>&limit&offset.
+    q filters in python over the JSON fields (session id, conv key, status), so offset skips filtered rows."""
+    t0, t1 = window_range(qs)
+    eng = (qs.get("eng") or [""])[0]
+    q = ((qs.get("q") or [""])[0]).strip().lower()
+    try:
+        limit = min(1000, max(1, int((qs.get("limit") or ["200"])[0])))
+    except ValueError:
+        limit = 200
+    try:
+        offset = max(0, int((qs.get("offset") or ["0"])[0]))
+    except ValueError:
+        offset = 0
+    where, args = "t BETWEEN ? AND ?", [t0, t1]
+    if eng in ENG:
+        where += " AND eng = ?"
+        args.append(eng)
+    with DB_LOCK, db() as con:
+        if q:
+            # text filter spans JSON fields: stream the window newest-first, filter in python
+            fetched, total = [], 0
+            for e, j in con.execute(f"SELECT eng,j FROM reqs WHERE {where} ORDER BY t DESC", args):
+                try:
+                    r = json.loads(j)
+                except ValueError:
+                    continue
+                blob = " ".join(str(r.get(k) or "") for k in ("sess", "conv", "status", "id")).lower()
+                if q not in blob:
+                    continue
+                if total >= offset and len(fetched) < limit:
+                    fetched.append({**r, "eng": e})
+                total += 1
+        else:
+            total = con.execute(f"SELECT COUNT(*) FROM reqs WHERE {where}", args).fetchone()[0]
+            fetched = [{**json.loads(j), "eng": e} for e, j in con.execute(
+                f"SELECT eng,j FROM reqs WHERE {where} ORDER BY t DESC LIMIT ? OFFSET ?",
+                args + [limit, offset]).fetchall()]
+    return {"from": t0, "to": t1, "total": total, "rows": fetched}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -647,12 +1071,13 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/state":
             with lock:
                 m = {k: v for k, v in state.items() if k != "eng"}
-                m["eng"] = {eid: {"stats": e["stats"], **({"live": e["live"]} if e.get("live") else {})}
+                m["eng"] = {eid: {"stats": e["stats"], "meta": e.get("meta"), "boot": e.get("boot"),
+                                  **({"live": e["live"]} if e.get("live") else {})}
                             for eid, e in state["eng"].items()}
                 for eid, e in m["eng"].items():  # main live: the page needs live/engine/cache/totals, not raw metric dumps
                     if "live" in e and isinstance(e["live"], dict):
                         e["live"] = {k: v for k, v in e["live"].items() if k not in ("requests", "history")}
-                m["eng_names"] = ENG
+                m["eng_names"] = {eid: _names.get(eid) or ENG[eid] for eid in ENG}
                 m["history"] = list(history)
                 m["requests"] = state["requests"][-200:]
             self.send(json.dumps(m).encode(), "application/json")
@@ -662,10 +1087,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send(json.dumps(api_summary(qs)).encode(), "application/json")
         elif u.path == "/api/hw":
             self.send(json.dumps(api_hw(qs)).encode(), "application/json")
+        elif u.path == "/api/requests":
+            self.send(json.dumps(api_requests(qs)).encode(), "application/json")
         elif u.path in ("/", "/index.html"):
             self.send(PAGE.read_bytes(), "text/html; charset=utf-8")
         elif u.path in ("/hw", "/hw.html"):
             self.send(Path(__file__).with_name("hw.html").read_bytes(), "text/html; charset=utf-8")
+        elif u.path in ("/history", "/history.html"):
+            self.send(Path(__file__).with_name("history.html").read_bytes(), "text/html; charset=utf-8")
         else:
             self.send_error(404)
 

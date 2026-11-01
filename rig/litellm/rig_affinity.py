@@ -22,6 +22,8 @@ Loaded from /opt/litellm (config dir): litellm_settings.callbacks: ["rig_affinit
 Stdlib + litellm (+ httpx, a litellm dependency) only. Never raises into the request path.
 """
 import hashlib
+import json
+import os
 import time
 
 import httpx
@@ -29,6 +31,12 @@ from litellm.integrations.custom_logger import CustomLogger
 
 POOL = {"qwen3.8-flash-next-3090"}
 LIVENESS_TTL = 5.0
+# per-request attribution log for the rig monitor: one JSON line per completion
+# {t, sid, conv, model, url}. sid = the affinity key ("client|digest") or the raw
+# client session id; conv = sha1(first user message)[:16] = the auto-<conv>.bin key the
+# Strata serve layer parks conversations under, which lets the monitor join engine
+# request rows with disk-restore events. Best-effort: any failure skips the line.
+REQLOG = os.environ.get("RIG_REQLOG", "/var/lib/litellm/reqlog.jsonl")
 try:
     from litellm.constants import SESSION_ID_GENERATED_METADATA_KEY as GENERATED
 except Exception:  # noqa: BLE001
@@ -108,6 +116,54 @@ class RigAffinity(CustomLogger):
         except Exception:  # noqa: BLE001 - affinity is best-effort
             pass
         return data
+
+    @staticmethod
+    def _call_data(kwargs):
+        """LiteLLM passes `model_call_details` itself as kwargs to async_log_success_event:
+        messages sit on top, the chosen deployment's api_base and the request metadata under
+        litellm_params, model_info also carries api_base. Older layouts nested it one level in."""
+        if isinstance(kwargs, dict):
+            if "messages" in kwargs or "litellm_params" in kwargs:
+                return kwargs
+            for k in ("model_call_details", "litellm_call_info"):
+                d = kwargs.get(k)
+                if isinstance(d, dict):
+                    return d
+        return {}
+
+    @staticmethod
+    def _api_base(kwargs, data):
+        for d in (data.get("litellm_params"), data.get("model_info"), kwargs.get("model_info"), data):
+            u = (d or {}).get("api_base") if isinstance(d, dict) else None
+            if isinstance(u, str) and u.startswith("http"):
+                return u
+        return ""
+
+    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        """One JSONL line per completion for the rig monitor (session id + conversation key)."""
+        try:
+            data = self._call_data(kwargs)
+            msgs = data.get("messages") or []
+            first = next((_text(m.get("content")) for m in msgs
+                          if isinstance(m, dict) and m.get("role") == "user"), "")
+            conv = hashlib.sha1(first.encode("utf-8", "replace")).hexdigest()[:16] if first else ""
+            lp = data.get("litellm_params") or {}
+            meta = lp.get("metadata") or data.get("metadata") or kwargs.get("metadata") or {}
+            sid = str(meta.get("session_id") or "") if isinstance(meta, dict) else ""
+            try:
+                t = end_time.timestamp()
+            except AttributeError:
+                t = time.time()
+            line = {"t": round(t, 3), "sid": sid, "conv": conv,
+                    "model": str(data.get("model") or lp.get("model") or kwargs.get("model") or ""),
+                    "url": self._api_base(kwargs, data)}
+            d = os.path.dirname(REQLOG)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            with open(REQLOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001 - logging must never break the response path
+            pass
 
 
 handler = RigAffinity()

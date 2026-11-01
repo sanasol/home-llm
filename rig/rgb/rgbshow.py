@@ -26,6 +26,13 @@ DEC_FULL = {"0": 250.0, "1": 130.0, "2": 130.0}      # decode t/s full-scale per
 PRE_FULL = {"0": 7000.0, "1": 6500.0, "2": 6500.0}   # prefill t/s full-scale per lane
 DEC_COL, PRE_COL = (0, 255, 80), (255, 140, 0)       # green decode / orange prefill
 OFF = (0, 0, 0)
+# I2C devices are throttled: (min seconds between writes, colour quantum).
+# 01.11: 10 Hz writes to the 5090's ENE controller over the GPU's I2C were followed
+# by Xid 175/154 (name=openrgb) and the 5090 fell off CUDA until reboot. Writes go
+# out at most every `interval`; a change held back is sent on the next allowed tick
+# (trailing debounce, the latest frame always lands). Quantizing colours stops a
+# flickering partial LED from counting as a new frame. Mobo (USB HID) is not I2C.
+I2C_THROTTLE = {"gpu": (0.5, 32), "ram": (0.25, 16)}
 
 
 def grad(pal, x):
@@ -80,18 +87,26 @@ class Rig:
             d.set_mode("direct")
         self.zl = [len(z.leds) for z in self.mb.zones]  # zone0 RGB, 1 ARGB1, 2 pump, 3 fans
         self.last = {}
+        self.next_ok = {}
+        self.writes = {"gpu": 0, "ram": 0, "mb": 0}
 
     def push(self, name, dev, cols):
+        interval, q = I2C_THROTTLE.get(name, (0.0, 1))
+        if q > 1:
+            cols = [tuple(min(255, (v + q // 2) // q * q) for v in c) for c in cols]
         if self.last.get(name) == cols:
             return
+        now = time.time()
+        if now < self.next_ok.get(name, 0.0):
+            return  # held back; `last` is untouched, so it goes out next allowed tick
         self.last[name] = cols
+        self.next_ok[name] = now + interval
+        self.writes[name] += 1
         dev.set_colors([RGBColor(*c) for c in cols], fast=True)
 
     def show(self, tick, gpu30, ram_a12, ram_b12, pump, fans):
-        if tick % 2 == 0:
-            self.push("gpu", self.gpu, gpu30)
-        if tick % 4 == 0:
-            self.push("ram", self.ram, ram_a12 + ram_b12)
+        self.push("gpu", self.gpu, gpu30)
+        self.push("ram", self.ram, ram_a12 + ram_b12)
         mb = [OFF] * self.zl[0] + [OFF] * self.zl[1]
         mb += pump if isinstance(pump, list) else [pump] * self.zl[2]
         mb += fans if isinstance(fans, list) else [fans] * self.zl[3]
@@ -353,7 +368,8 @@ def main():
                         f"pre5090={pre['0']:.0f} preL2={pre['1']:.0f} preL3={pre['2']:.0f} "
                         f"run={run['0']:.0f}/{run['1']:.0f}/{run['2']:.0f} hot={hot:.0f}C cpu={cpu:.0f}C "
                         f"up={up['0']}/{up['1']}/{up['2']} flash={flash:.2f} "
-                        f"alerts={a.get('alerts', {}).get('x', 0):.0f}\n")
+                        f"alerts={a.get('alerts', {}).get('x', 0):.0f} "
+                        f"writes gpu/ram/mb={rig.writes['gpu']}/{rig.writes['ram']}/{rig.writes['mb']}\n")
         tick += 1
         time.sleep(0.05)
 
