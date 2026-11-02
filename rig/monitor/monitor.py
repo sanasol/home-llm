@@ -563,13 +563,19 @@ URL2EID = {url.rstrip("/"): eid for eid, (url, _u) in LANES.items()}
 RESTORE_RE = re.compile(r"auto sessions: restored (\d+) tokens from auto-([0-9a-f]{16})\.bin in ([\d.]+) ms")
 SAVE_RE = re.compile(r"auto sessions: saved (\d+) tokens \((\d+(?:\.\d+)?) GB\) to auto-([0-9a-f]{16})\.bin in ([\d.]+) ms")
 SFAIL_RE = re.compile(r"auto sessions: session file: not enough RAM to read it")
+# under --batch the engine-native disk cache does the parking (PR #3341); its log lines carry
+# no conversation key, so disk_ms joins to request rows by restored-token count instead
+EPARK_RE = re.compile(r"conversation cache: parked (\d+) tokens to disk \((\d+) bytes\) in ([\d.]+) ms")
+EBACK_RE = re.compile(r"conversation cache: took back (\d+) tokens from disk \((\d+) bytes\) in ([\d.]+) ms")
 
 _hooks = deque(maxlen=8000)       # attribution events, chronological, each consumed once
 _hook_off = [0]                   # byte offset in REQLOG
 _disk = {}                        # (eid, conv16) -> (ts, ms) latest disk restore seen
+_disk_tok = {}                    # (eid, restored token count) -> (ts, ms): batch-mode, no conv key
 _dsum = {e: {"saves": 0, "bytes": 0, "saved_tok": 0, "restores": 0, "rest_tok": 0,
-             "rest_ms": 0.0, "fails": 0} for e in ENG}   # cumulative auto-sessions activity
-_slog = {}                        # eid -> [offset, first_read]
+             "rest_ms": 0.0, "fails": 0} for e in ENG}   # cumulative disk-cache activity
+_slog = {}                        # eid -> [offset, first_read] of the serve log
+_eslog = {}                       # eid -> [offset, first_read] of the engine log
 _enrich = {}                      # (eid, engine request id) -> (sess, conv, disk_ms): rows are re-scraped every tick
 _conv_lane = {}                   # conv16 -> eid: learned stickiness, for events with no url
 
@@ -645,6 +651,40 @@ def serve_events(presets):
             if SFAIL_RE.search(l):
                 _dsum[eid]["fails"] += 1
         st[1] = False
+    # engine logs: the batch-mode disk cache (PR #3341) parks/restores without a conversation key
+    for eid, preset in presets.items():
+        if not preset:
+            continue
+        p = LAUNCH_DIR / ("%s.engine.log" % preset)
+        st = _eslog.setdefault(eid, [0, True])
+        if not p.exists():
+            continue
+        first = st[1]
+        st[0], lines = _tail(p, st[0])
+        if not lines:
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            mtime = time.time()
+        ts0 = mtime if first else time.time()
+        for l in lines:
+            m = EPARK_RE.search(l)
+            if m:
+                d = _dsum[eid]
+                d["saves"] += 1
+                d["saved_tok"] += int(m.group(1))
+                d["bytes"] += int(m.group(2))
+                continue
+            m = EBACK_RE.search(l)
+            if m:
+                n, ms = int(m.group(1)), float(m.group(3))
+                d = _dsum[eid]
+                d["restores"] += 1
+                d["rest_tok"] += n
+                d["rest_ms"] += ms
+                _disk_tok[(eid, n)] = (ts0, ms)
+        st[1] = False
 
 def enrich_rows(rows, fresh):
     """Attach session/conversation/disk-restore data to engine request rows.
@@ -658,21 +698,37 @@ def enrich_rows(rows, fresh):
             continue
         if key not in fresh or not rid:
             continue
-        lo = r["ts"] - (r.get("dur") or 0) - 90
-        hit = None
+        # engine "time" is the request START; the hook logs at completion -> join on finish time
+        end = r["ts"] + (r.get("dur") or 0)
+        lo = r["ts"] - 90
+        hit, bestd = None, 1e9
         for h in reversed(_hooks):
-            if h["used"] or h["t"] > r["ts"] + 5 or h["t"] < lo:
+            if h["used"] or h["t"] < lo or h["t"] > end + 20:
                 continue
             if h["eid"] not in (eid, None):
                 continue
-            hit = h
-            break
-        if hit:
+            dist = abs(h["t"] - end)
+            if dist < bestd:
+                hit, bestd = h, dist
+        if hit and bestd <= 10:
             hit["used"] = True
             if hit["conv"]:
                 _conv_lane.setdefault(hit["conv"], eid)
             d = _disk.pop((eid, hit["conv"]), None)   # one restore belongs to exactly one request
-            disk_ms = round(d[1], 1) if d and lo <= d[0] <= r["ts"] + 5 else None
+            if d and not (lo <= d[0] <= end + 20):
+                d = None
+            if d is None:
+                # batch mode: the engine disk cache parks without a conversation key,
+                # join by restored-token count ~= the request's prompt size
+                pt = r.get("prompt") or 0
+                for k, ev in list(_disk_tok.items()):
+                    if k[0] != eid or not (lo <= ev[0] <= end + 20):
+                        continue
+                    if pt and abs(k[1] - pt) <= max(1024, 0.05 * pt):
+                        d = ev
+                        _disk_tok.pop(k)
+                        break
+            disk_ms = round(d[1], 1) if d else None
             val = (hit["sess"][:60], hit["conv"], disk_ms)
             _enrich[key] = val
             r["sess"], r["conv"], r["disk_ms"] = val
