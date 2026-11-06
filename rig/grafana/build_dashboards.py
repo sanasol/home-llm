@@ -199,33 +199,67 @@ def overview():
     b.ts("VRAM used", [("nvidia_smi_memory_used_bytes" + GPU_JOIN, "{{gpu}}")], unit="bytes", w=8, minv=0)
     b.ts("SM clock MHz", [("nvidia_smi_clocks_current_sm_clock_hz / 1e6" + GPU_JOIN, "{{gpu}}")], w=8, minv=0)
 
-    b.row("Power & electricity (ESTIMATE: GPUs + CPU RAPL + ~55 W rest, /0.89 PSU; recording rules rig:*)")
-    est = ("No wall meter: GPUs (NVML) + CPU package (RAPL) + ~10% CPU VRM + ~55 W rest of the box, "
-           "divided by PSU efficiency 0.89. +-10-15%. Rules: rig/config/prometheus-rules/power.yml.")
+    b.row("Power & electricity — measured from Matter wall plugs")
+    plug = ("Wall power is metered by GRILLPLATS Matter plugs: \"Rig\" (node 23) and \"Minisforum\" (node 25), "
+            "ElectricalPowerMeasurement cluster, meter class ±1%. Rules: "
+            "rig/config/prometheus-rules/power.yml, group rig_power_plug. Money is reported in EUR with "
+            "a fixed 117.581053 RSD/EUR (open.er-api.com, 2026-11-06). The old estimate (GPU NVML + CPU "
+            "RAPL + ~55 W rest, /0.89 PSU) left the dashboard on 06.11 — it under-read by ~2x; its rules "
+            "stay as rig:power_system_wall_est_watts for pre-06.11 history.")
     kwh = "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000"
-    rsd = "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600"
-    b.stat("System power now (wall, est.)", [("rig:power_system_wall_watts", "system")], unit="watt", w=4, decimals=0,
-           desc=est, thresholds=[{"color": "green", "value": None}, {"color": "orange", "value": 1100},
-                                 {"color": "red", "value": 1350}])
-    b.stat("Cost now", [("rig:electricity_cost_rsd_per_hour", "RSD/h"),
-                        ("rig:electricity_price_rsd_per_kwh", "RSD/kWh")], w=4, decimals=1,
+    eur = "sum_over_time(rig:electricity_cost_eur_per_hour[$__range]) * 15 / 3600"
+    b.stat("System power now (W, wall plugs)", [("rig:power_system_wall_watts", "Rig + Minisforum sockets")],
+           unit="watt", w=4, decimals=0, desc=plug,
+           thresholds=[{"color": "green", "value": None}, {"color": "yellow", "value": 400},
+                       {"color": "red", "value": 650}])
+    b.stat("Cost now (EUR/h)", [("rig:electricity_cost_eur_per_hour", "from wall plugs"),
+                                ("rig:electricity_price_eur_per_kwh", "tariff EUR/kWh")],
+           unit="currencyEUR", w=4, decimals=3,
            desc="EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: "
-                "VT 26.5 / NT 18.9 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice).")
-    b.stat("Today (since 00:00)", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=1, time_from="now/d", graph="none")
-    b.stat("This month", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=0, time_from="now/M", graph="none")
-    b.stat("Dashboard range", [(kwh, "kWh"), (rsd, "RSD")], w=4, decimals=1, graph="none",
-           desc="Energy and cost over the time range picked at the top right.")
-    b.stat("Month projection (7d avg x 730 h)", [("avg_over_time(rig:electricity_cost_rsd_per_hour[7d]) * 730", "RSD / month"),
-                                                 ("avg_over_time(rig:power_system_wall_watts[7d]) * 730 / 1000", "kWh / month")],
-           w=4, decimals=0, graph="none")
-    b.ts("System power breakdown (wall, est.)", [
-        ("rig:power_gpu_watts", "GPUs (3 cards, NVML)"),
+                "VT 0.2254 / NT 0.1607 EUR/kWh (18.9 / 26.5 RSD, NT 00-08 Belgrade). Fixed monthly fees "
+                "excluded. docs/20 (sep-2026 invoice).")
+    b.stat("All wall plugs (W)", [("rig:power_all_plugs_watts", "all sockets")], unit="watt", w=4,
+           decimals=0, desc="Sum over every device that meters energy (Rig, Minisforum, \"Уголь\").")
+    b.stat("Wall plugs reporting", [("count(rig:power_plug_online == 1)", "nodes reporting"),
+                                    ("count(rig:power_plug_online)", "total")], w=4, decimals=0,
+           graph="none", desc="Metering plugs currently online; a plug that drops out stops its series "
+                              "instead of repeating a stale value (mqtt2prometheus cache.timeout 0).")
+    b.stat("Today (since 00:00)", [(kwh, "kWh"), (eur, "EUR")], unit="currencyEUR", w=4, decimals=3,
+           time_from="now/d", graph="none")
+    b.stat("This month", [(kwh, "kWh"), (eur, "EUR")], unit="currencyEUR", w=4, decimals=2,
+           time_from="now/M", graph="none")
+    b.stat("Dashboard range", [(kwh, "kWh"), (eur, "EUR")], unit="currencyEUR", w=4, decimals=3,
+           graph="none", desc="Energy and cost over the time range picked at the top right.")
+    b.stat("Month projection (7d avg x 730 h)",
+           [("avg_over_time(rig:electricity_cost_eur_per_hour[7d]) * 730", "EUR / month"),
+            ("avg_over_time(rig:power_system_wall_watts[7d]) * 730 / 1000", "kWh / month")],
+           unit="currencyEUR", w=4, decimals=2, graph="none")
+    b.ts("Wall plug power vs GPU/CPU draw", [
+        ("rig:power_system_wall_watts", "Rig + Minisforum sockets (measured)"),
+        ("rig:power_plug_minisforum_watts", "Minisforum socket"),
+        ("rig:power_gpu_watts", "GPU (NVML, per card)"),
         ("rig:power_cpu_watts", "CPU package (RAPL)"),
-        ("rig:power_other_watts", "rest of box (est.)"),
-        ("rig:power_system_wall_watts - rig:power_system_dc_watts", "PSU losses (est.)")],
-        unit="watt", w=16, minv=0, stack=True, fill=40, desc=est)
-    b.ts("Electricity cost RSD/h", [("rig:electricity_cost_rsd_per_hour", "RSD/h")], w=8, minv=0, decimals=1,
-         desc="System power x current tariff (NT 00-08 is ~1/3 cheaper).")
+        ("rig:power_other_watts", "rest: VRM + box (estimate)")], unit="watt", w=16, decimals=0,
+        desc="What the socket draws versus the sum of GPU (NVML) and CPU (RAPL). The gap is monitor, "
+             "peripherals, disks and PSU losses.")
+    b.ts("Cost, EUR/h", [("rig:electricity_cost_eur_per_hour", "from wall plugs")],
+         unit="currencyEUR", w=8, decimals=3, minv=0,
+         desc="Measured wall power x current tariff (NT 00-08 is ~1/3 cheaper).")
+    b.ts("Energy, kWh (integral of measured plug power)", [
+        ("(sum_over_time(rig:electricity_kwh_per_hour_plug[$__interval]) * 15 / 3600)",
+         "Rig + Minisforum sockets"),
+        ("(sum_over_time(rig:electricity_kwh_per_hour_minisforum[$__interval]) * 15 / 3600)",
+         "Minisforum socket")], unit="kWh", w=8, decimals=3,
+        desc="The rules publish kW/h (15 s interval); sum of steps x 15/3600 = kWh over the selected "
+             "window. Not a counter, so increase() does not apply.")
+    b.ts("Wall plugs: W / V / A", [
+        ('avg_over_time(matter_active_power_watts{sensor=~"Rig|Minisforum|Уголь"}[2m])', "{{sensor}} W"),
+        ('avg_over_time(matter_voltage_volts{sensor=~"Rig|Minisforum|Уголь"}[2m])', "{{sensor}} V"),
+        ('avg_over_time(matter_current_amps{sensor=~"Rig|Minisforum|Уголь"}[2m])', "{{sensor}} A")],
+        w=16, decimals=1,
+        desc="Per-socket active power, voltage and current (ElectricalPowerMeasurement). Restricted to "
+             "the metering nodes: the exporter's <Cluster>/<Attribute> topic match also catches other "
+             "clusters, so an unfiltered selector mixes in unrelated numbers.")
 
     b.row("Fans")
     b.ts("GPU fan %", [("nvidia_smi_fan_speed_ratio" + GPU_JOIN, "{{gpu}}")], unit="percentunit", w=8, minv=0, maxv=1,

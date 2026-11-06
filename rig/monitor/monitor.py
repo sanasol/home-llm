@@ -810,7 +810,8 @@ def sample(prev, prev_t, tick):
         point["pcie_rx_by"] = [x.get("pcie_rx_mbps") for x in gs]
         point["pcie_tx_by"] = [x.get("pcie_tx_mbps") for x in gs]
     # system power = live GPU sum (nvidia-smi; _last_gs on off-ticks) + Prometheus CPU/rest (15 s) x PSU factor:
-    # the same estimate as rig:power_system_wall_watts, but never lagging the GPU numbers shown next to it
+    # the estimate (rig:power_system_wall_est_watts), kept because it never lags the GPU numbers shown
+    # next to it. The card's headline number is wall_w = rig:power_system_wall_watts = measured plug W.
     en = _energy
     if en.get("psu_k") and t - en.get("t", 0) < 60 and point.get("gpu_power_by"):
         point["sys_power"] = round((sum(point["gpu_power_by"]) + (en["cpu_w"] or 0) + (en["other_w"] or 0)) * en["psu_k"], 0)

@@ -864,7 +864,7 @@ $("metrics").innerHTML = METRICS.map((m) => `
       <div><span class="st-metric__value" id="mv-speed">–</span><span class="st-metric__sub" id="ms-speed">decode</span></div>
       <div class="speed-prefill"><span class="st-metric__value" id="mv-prefill">–</span><span class="st-metric__sub" id="ms-prefill">prefill</span></div>
     </div>` : m.key === "power" ? `<div class="speed-values">
-      <div><span class="st-metric__value" id="mv-power">–</span><span class="st-metric__sub" id="ms-power">system · est.</span></div>
+      <div><span class="st-metric__value" id="mv-power">–</span><span class="st-metric__sub" id="ms-power">wall · metered socket</span></div>
       <div class="speed-prefill"><span class="st-metric__value" id="mv-gpupow">–</span><span class="st-metric__sub" id="ms-gpupow">GPUs</span></div>
     </div>
     <span class="st-metric__sub" id="ms-energy1"></span>
@@ -1110,12 +1110,17 @@ function render(s) {
   metricChart("temp", xs, gLabel.map((l, i) =>
     ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_temp_by")[i], unit: " °C", dec: 0})), {autoMin: true, max: 95, yu: "°"});
 
-  // power: system (wall, ESTIMATE from Prometheus rig:* rules) big, GPUs (NVML, exact) small; kWh/RSD lines
+  // power: measured wall W from the Matter plug (rig:power_system_wall_watts) big, GPUs (NVML) small;
+  // kWh/RSD lines. The GPU+CPU estimate survives only as the dashed history line (it is what pre-06.11
+  // history holds) and as the fallback when the plug stops reporting.
   {
     const en = s.energy || {};
     const ok = en.ok && Date.now() / 1000 - (en.t || 0) < 90;
-    const sysNow = ok && en.psu_k && pow ? (pow + (en.cpu_w || 0) + (en.other_w || 0)) * en.psu_k : (ok ? en.wall_w : null);
-    setMetric("power", sysNow != null ? fmt(sysNow) : null, "W", ok ? `system · est. (CPU ${fmt(en.cpu_w)} W)` : "system · no data");
+    const metered = ok ? en.wall_w : null;
+    const estNow = ok && en.psu_k && pow ? (pow + (en.cpu_w || 0) + (en.other_w || 0)) * en.psu_k : null;
+    const sysNow = metered != null ? metered : estNow;
+    setMetric("power", sysNow != null ? fmt(sysNow) : null, "W",
+              metered != null ? "wall · metered socket" : (ok ? "wall · estimate (no plug data)" : "system · no data"));
     const gp = $("mv-gpupow");
     if (gp) gp.innerHTML = pow ? `${esc(fmt(pow))}<small>W</small>` : "–";
     const gs = $("ms-gpupow");
@@ -1128,7 +1133,7 @@ function render(s) {
     const sysv = hcol("sys_power");
     const sysMax = Math.max(0, ...sysv.filter((x) => x != null));
     metricChart("power", xs, [
-      {label: "system (est.)", c: () => SC()[3], dash: true, w: 1.6, values: fill(sysv), unit: " W (wall, estimate)", dec: 0},
+      {label: "system (est.)", c: () => SC()[3], dash: true, w: 1.6, values: fill(sysv), unit: " W (GPU+CPU estimate)", dec: 0},
       ...gLabel.map((l, i) =>
         ({label: l, c: () => SC()[i % 3], values: hcolBy("gpu_power_by")[i], unit: ` W (limit ${fmt((gpus[i] || {})["power.limit"] || 0)} W)`, dec: 0}))],
       {max: Math.max(1, sysMax * 1.08, ...gpus.map((g) => g["power.limit"] || 0)), yu: "W"});

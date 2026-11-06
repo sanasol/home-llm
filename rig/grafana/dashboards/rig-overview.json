@@ -1581,7 +1581,7 @@
   },
   {
    "type": "row",
-   "title": "Power & electricity (ESTIMATE: GPUs + CPU RAPL + ~55 W rest, /0.89 PSU; recording rules rig:*)",
+   "title": "Power & electricity \u2014 measured from Matter wall plugs",
    "collapsed": false,
    "id": 30,
    "gridPos": {
@@ -1594,7 +1594,7 @@
   },
   {
    "id": 31,
-   "title": "System power now (wall, est.)",
+   "title": "System power now (W, wall plugs)",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -1610,7 +1610,7 @@
     {
      "refId": "A",
      "expr": "rig:power_system_wall_watts",
-     "legendFormat": "system",
+     "legendFormat": "Rig + Minisforum sockets",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1632,12 +1632,12 @@
         "value": null
        },
        {
-        "color": "orange",
-        "value": 1100
+        "color": "yellow",
+        "value": 400
        },
        {
         "color": "red",
-        "value": 1350
+        "value": 650
        }
       ]
      }
@@ -1658,11 +1658,11 @@
     "justifyMode": "auto",
     "orientation": "auto"
    },
-   "description": "No wall meter: GPUs (NVML) + CPU package (RAPL) + ~10% CPU VRM + ~55 W rest of the box, divided by PSU efficiency 0.89. +-10-15%. Rules: rig/config/prometheus-rules/power.yml."
+   "description": "Wall power is metered by GRILLPLATS Matter plugs: \"Rig\" (node 23) and \"Minisforum\" (node 25), ElectricalPowerMeasurement cluster, meter class \u00b11%. Rules: rig/config/prometheus-rules/power.yml, group rig_power_plug. Money is reported in EUR with a fixed 117.581053 RSD/EUR (open.er-api.com, 2026-11-06). The old estimate (GPU NVML + CPU RAPL + ~55 W rest, /0.89 PSU) left the dashboard on 06.11 \u2014 it under-read by ~2x; its rules stay as rig:power_system_wall_est_watts for pre-06.11 history."
   },
   {
    "id": 32,
-   "title": "Cost now",
+   "title": "Cost now (EUR/h)",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -1677,8 +1677,8 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "rig:electricity_cost_rsd_per_hour",
-     "legendFormat": "RSD/h",
+     "expr": "rig:electricity_cost_eur_per_hour",
+     "legendFormat": "from wall plugs",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1686,8 +1686,8 @@
     },
     {
      "refId": "B",
-     "expr": "rig:electricity_price_rsd_per_kwh",
-     "legendFormat": "RSD/kWh",
+     "expr": "rig:electricity_price_eur_per_kwh",
+     "legendFormat": "tariff EUR/kWh",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1696,8 +1696,8 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
-     "decimals": 1,
+     "unit": "currencyEUR",
+     "decimals": 3,
      "color": {
       "mode": "thresholds"
      },
@@ -1727,11 +1727,11 @@
     "justifyMode": "auto",
     "orientation": "auto"
    },
-   "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 26.5 / NT 18.9 RSD/kWh (NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice)."
+   "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 0.2254 / NT 0.1607 EUR/kWh (18.9 / 26.5 RSD, NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice)."
   },
   {
    "id": 33,
-   "title": "Today (since 00:00)",
+   "title": "All wall plugs (W)",
    "type": "stat",
    "datasource": {
     "type": "prometheus",
@@ -1746,8 +1746,68 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000",
-     "legendFormat": "kWh",
+     "expr": "rig:power_all_plugs_watts",
+     "legendFormat": "all sockets",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "watt",
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Sum over every device that meters energy (Rig, Minisforum, \"\u0423\u0433\u043e\u043b\u044c\")."
+  },
+  {
+   "id": 34,
+   "title": "Wall plugs reporting",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "count(rig:power_plug_online == 1)",
+     "legendFormat": "nodes reporting",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1755,8 +1815,8 @@
     },
     {
      "refId": "B",
-     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
-     "legendFormat": "RSD",
+     "expr": "count(rig:power_plug_online)",
+     "legendFormat": "total",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1766,7 +1826,76 @@
    "fieldConfig": {
     "defaults": {
      "unit": "none",
-     "decimals": 1,
+     "decimals": 0,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Metering plugs currently online; a plug that drops out stops its series instead of repeating a stale value (mqtt2prometheus cache.timeout 0)."
+  },
+  {
+   "id": 35,
+   "title": "Today (since 00:00)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 65
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum_over_time(rig:power_system_wall_watts[$__range]) * 15 / 3600 / 1000",
+     "legendFormat": "kWh",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "sum_over_time(rig:electricity_cost_eur_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "EUR",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyEUR",
+     "decimals": 3,
      "color": {
       "mode": "thresholds"
      },
@@ -1800,7 +1929,7 @@
    "hideTimeOverride": false
   },
   {
-   "id": 34,
+   "id": 36,
    "title": "This month",
    "type": "stat",
    "datasource": {
@@ -1810,7 +1939,7 @@
    "gridPos": {
     "h": 5,
     "w": 4,
-    "x": 12,
+    "x": 20,
     "y": 65
    },
    "targets": [
@@ -1825,8 +1954,8 @@
     },
     {
      "refId": "B",
-     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
-     "legendFormat": "RSD",
+     "expr": "sum_over_time(rig:electricity_cost_eur_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "EUR",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1835,8 +1964,8 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
-     "decimals": 0,
+     "unit": "currencyEUR",
+     "decimals": 2,
      "color": {
       "mode": "thresholds"
      },
@@ -1870,7 +1999,7 @@
    "hideTimeOverride": false
   },
   {
-   "id": 35,
+   "id": 37,
    "title": "Dashboard range",
    "type": "stat",
    "datasource": {
@@ -1880,8 +2009,8 @@
    "gridPos": {
     "h": 5,
     "w": 4,
-    "x": 16,
-    "y": 65
+    "x": 0,
+    "y": 70
    },
    "targets": [
     {
@@ -1895,8 +2024,8 @@
     },
     {
      "refId": "B",
-     "expr": "sum_over_time(rig:electricity_cost_rsd_per_hour[$__range]) * 15 / 3600",
-     "legendFormat": "RSD",
+     "expr": "sum_over_time(rig:electricity_cost_eur_per_hour[$__range]) * 15 / 3600",
+     "legendFormat": "EUR",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1905,8 +2034,8 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
-     "decimals": 1,
+     "unit": "currencyEUR",
+     "decimals": 3,
      "color": {
       "mode": "thresholds"
      },
@@ -1939,7 +2068,7 @@
    "description": "Energy and cost over the time range picked at the top right."
   },
   {
-   "id": 36,
+   "id": 38,
    "title": "Month projection (7d avg x 730 h)",
    "type": "stat",
    "datasource": {
@@ -1949,14 +2078,14 @@
    "gridPos": {
     "h": 5,
     "w": 4,
-    "x": 20,
-    "y": 65
+    "x": 4,
+    "y": 70
    },
    "targets": [
     {
      "refId": "A",
-     "expr": "avg_over_time(rig:electricity_cost_rsd_per_hour[7d]) * 730",
-     "legendFormat": "RSD / month",
+     "expr": "avg_over_time(rig:electricity_cost_eur_per_hour[7d]) * 730",
+     "legendFormat": "EUR / month",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -1974,8 +2103,8 @@
    ],
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
-     "decimals": 0,
+     "unit": "currencyEUR",
+     "decimals": 2,
      "color": {
       "mode": "thresholds"
      },
@@ -2007,8 +2136,8 @@
    }
   },
   {
-   "id": 37,
-   "title": "System power breakdown (wall, est.)",
+   "id": 39,
+   "title": "Wall plug power vs GPU/CPU draw",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -2017,14 +2146,14 @@
    "gridPos": {
     "h": 8,
     "w": 16,
-    "x": 0,
+    "x": 8,
     "y": 70
    },
    "targets": [
     {
      "refId": "A",
-     "expr": "rig:power_gpu_watts",
-     "legendFormat": "GPUs (3 cards, NVML)",
+     "expr": "rig:power_system_wall_watts",
+     "legendFormat": "Rig + Minisforum sockets (measured)",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -2032,6 +2161,24 @@
     },
     {
      "refId": "B",
+     "expr": "rig:power_plug_minisforum_watts",
+     "legendFormat": "Minisforum socket",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "C",
+     "expr": "rig:power_gpu_watts",
+     "legendFormat": "GPU (NVML, per card)",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "D",
      "expr": "rig:power_cpu_watts",
      "legendFormat": "CPU package (RAPL)",
      "datasource": {
@@ -2040,18 +2187,9 @@
      }
     },
     {
-     "refId": "C",
+     "refId": "E",
      "expr": "rig:power_other_watts",
-     "legendFormat": "rest of box (est.)",
-     "datasource": {
-      "type": "prometheus",
-      "uid": "rigprom"
-     }
-    },
-    {
-     "refId": "D",
-     "expr": "rig:power_system_wall_watts - rig:power_system_dc_watts",
-     "legendFormat": "PSU losses (est.)",
+     "legendFormat": "rest: VRM + box (estimate)",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -2064,14 +2202,14 @@
      "custom": {
       "drawStyle": "line",
       "lineWidth": 2,
-      "fillOpacity": 40,
+      "fillOpacity": 10,
       "showPoints": "never",
       "spanNulls": 60000,
       "stacking": {
-       "mode": "normal"
+       "mode": "none"
       }
      },
-     "min": 0
+     "decimals": 0
     },
     "overrides": []
    },
@@ -2087,11 +2225,11 @@
      "showLegend": true
     }
    },
-   "description": "No wall meter: GPUs (NVML) + CPU package (RAPL) + ~10% CPU VRM + ~55 W rest of the box, divided by PSU efficiency 0.89. +-10-15%. Rules: rig/config/prometheus-rules/power.yml."
+   "description": "What the socket draws versus the sum of GPU (NVML) and CPU (RAPL). The gap is monitor, peripherals, disks and PSU losses."
   },
   {
-   "id": 38,
-   "title": "Electricity cost RSD/h",
+   "id": 40,
+   "title": "Cost, EUR/h",
    "type": "timeseries",
    "datasource": {
     "type": "prometheus",
@@ -2100,14 +2238,154 @@
    "gridPos": {
     "h": 8,
     "w": 8,
-    "x": 16,
-    "y": 70
+    "x": 0,
+    "y": 78
    },
    "targets": [
     {
      "refId": "A",
-     "expr": "rig:electricity_cost_rsd_per_hour",
-     "legendFormat": "RSD/h",
+     "expr": "rig:electricity_cost_eur_per_hour",
+     "legendFormat": "from wall plugs",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyEUR",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "decimals": 3
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "Measured wall power x current tariff (NT 00-08 is ~1/3 cheaper)."
+  },
+  {
+   "id": 41,
+   "title": "Energy, kWh (integral of measured plug power)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 78
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(sum_over_time(rig:electricity_kwh_per_hour_plug[$__interval]) * 15 / 3600)",
+     "legendFormat": "Rig + Minisforum sockets",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "(sum_over_time(rig:electricity_kwh_per_hour_minisforum[$__interval]) * 15 / 3600)",
+     "legendFormat": "Minisforum socket",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "kWh",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": 60000,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "decimals": 3
+    },
+    "overrides": []
+   },
+   "options": {
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc",
+     "hideZeros": false
+    },
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   },
+   "description": "The rules publish kW/h (15 s interval); sum of steps x 15/3600 = kWh over the selected window. Not a counter, so increase() does not apply."
+  },
+  {
+   "id": 42,
+   "title": "Wall plugs: W / V / A",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 16,
+    "x": 0,
+    "y": 86
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "avg_over_time(matter_active_power_watts{sensor=~\"Rig|Minisforum|\u0423\u0433\u043e\u043b\u044c\"}[2m])",
+     "legendFormat": "{{sensor}} W",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "avg_over_time(matter_voltage_volts{sensor=~\"Rig|Minisforum|\u0423\u0433\u043e\u043b\u044c\"}[2m])",
+     "legendFormat": "{{sensor}} V",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "C",
+     "expr": "avg_over_time(matter_current_amps{sensor=~\"Rig|Minisforum|\u0423\u0433\u043e\u043b\u044c\"}[2m])",
+     "legendFormat": "{{sensor}} A",
      "datasource": {
       "type": "prometheus",
       "uid": "rigprom"
@@ -2127,7 +2405,6 @@
        "mode": "none"
       }
      },
-     "min": 0,
      "decimals": 1
     },
     "overrides": []
@@ -2144,23 +2421,23 @@
      "showLegend": true
     }
    },
-   "description": "System power x current tariff (NT 00-08 is ~1/3 cheaper)."
+   "description": "Per-socket active power, voltage and current (ElectricalPowerMeasurement). Restricted to the metering nodes: the exporter's <Cluster>/<Attribute> topic match also catches other clusters, so an unfiltered selector mixes in unrelated numbers."
   },
   {
    "type": "row",
    "title": "Fans",
    "collapsed": false,
-   "id": 39,
+   "id": 43,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 78
+    "y": 94
    },
    "panels": []
   },
   {
-   "id": 40,
+   "id": 44,
    "title": "GPU fan %",
    "type": "timeseries",
    "datasource": {
@@ -2171,7 +2448,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 79
+    "y": 95
    },
    "targets": [
     {
@@ -2217,7 +2494,7 @@
    "description": "NVML fan duty per card (3090s: Vix override curve; 5090: VBIOS)."
   },
   {
-   "id": 41,
+   "id": 45,
    "title": "Board fans RPM",
    "type": "timeseries",
    "datasource": {
@@ -2228,7 +2505,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 79
+    "y": 95
    },
    "targets": [
     {
@@ -2273,7 +2550,7 @@
    "description": "nct6799 headers with a tach: radiator (CPU_FAN1), rear (CPU_FAN2), front 3x140 (CHA_FAN), pump. Bottom 2x P12 Pro on CHA_FAN4 are invisible to Linux (BIOS curve, no tach)."
   },
   {
-   "id": 42,
+   "id": 46,
    "title": "Board fan PWM %",
    "type": "timeseries",
    "datasource": {
@@ -2284,7 +2561,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 79
+    "y": 95
    },
    "targets": [
     {
@@ -2382,17 +2659,17 @@
    "type": "row",
    "title": "Host",
    "collapsed": false,
-   "id": 43,
+   "id": 47,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 87
+    "y": 103
    },
    "panels": []
   },
   {
-   "id": 44,
+   "id": 48,
    "title": "CPU busy %",
    "type": "timeseries",
    "datasource": {
@@ -2403,7 +2680,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 88
+    "y": 104
    },
    "targets": [
     {
@@ -2448,7 +2725,7 @@
    }
   },
   {
-   "id": 45,
+   "id": 49,
    "title": "CPU temp C",
    "type": "timeseries",
    "datasource": {
@@ -2459,7 +2736,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 88
+    "y": 104
    },
    "targets": [
     {
@@ -2502,7 +2779,7 @@
    }
   },
   {
-   "id": 46,
+   "id": 50,
    "title": "RAM available",
    "type": "timeseries",
    "datasource": {
@@ -2513,7 +2790,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 88
+    "y": 104
    },
    "targets": [
     {
@@ -2566,7 +2843,7 @@
    }
   },
   {
-   "id": 47,
+   "id": 51,
    "title": "Load / disk free",
    "type": "timeseries",
    "datasource": {
@@ -2577,7 +2854,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 96
+    "y": 112
    },
    "targets": [
     {
@@ -2650,17 +2927,17 @@
    "type": "row",
    "title": "LiteLLM gateway (summary \u2014 full view: dashboard 'LiteLLM gateway')",
    "collapsed": false,
-   "id": 48,
+   "id": 52,
    "gridPos": {
     "h": 1,
     "w": 24,
     "x": 0,
-    "y": 104
+    "y": 120
    },
    "panels": []
   },
   {
-   "id": 49,
+   "id": 53,
    "title": "LiteLLM req/s by model",
    "type": "timeseries",
    "datasource": {
@@ -2671,7 +2948,7 @@
     "h": 8,
     "w": 8,
     "x": 0,
-    "y": 105
+    "y": 121
    },
    "targets": [
     {
@@ -2715,7 +2992,7 @@
    }
   },
   {
-   "id": 50,
+   "id": 54,
    "title": "LiteLLM failed req/s",
    "type": "timeseries",
    "datasource": {
@@ -2726,7 +3003,7 @@
     "h": 8,
     "w": 8,
     "x": 8,
-    "y": 105
+    "y": 121
    },
    "targets": [
     {
@@ -2770,7 +3047,7 @@
    }
   },
   {
-   "id": 51,
+   "id": 55,
    "title": "LiteLLM in-flight",
    "type": "timeseries",
    "datasource": {
@@ -2781,7 +3058,7 @@
     "h": 8,
     "w": 8,
     "x": 16,
-    "y": 105
+    "y": 121
    },
    "targets": [
     {

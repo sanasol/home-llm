@@ -1,9 +1,29 @@
-# Rig electricity estimate (docs/20 §5, docs/14). No wall meter yet: system power is ESTIMATED
+# Two sources for the rig's wall power (docs/20 §5, docs/14):
+#   rig:power_system_wall_watts     CANONICAL wall power: recorded from the plugs since 06.11; the
+#                                   samples stored before that are the estimate (same series name).
+#   rig:power_system_wall_est_watts the estimate itself, still computed - history, and the fallback
+#                                   inside rig:power_system_wall_source_watts.
+#   rig:power_system_dc_watts / rig:power_gpu|cpu|other_watts  the estimate components, kept: NVML
+#                                   GPU and RAPL CPU numbers are still useful next to the wall reading.
+#   rig:power_system_wall_plug_watts MEASURED - GRILLPLATS Matter plugs in the wall sockets:
+#       "Rig" (node 23) feeds the rig itself, "Minisforum" (node 25) the minisforum box.
+#     Both plugs report ElectricalPowerMeasurement (cluster 144) every ~10 s, so the measured series is
+#     exact (±1% meter class); it only exists from 2026-11-06 00:40 UTC, when the bridge learned the
+#     cluster names (deploy/smart-home/matter2mqtt). Grafana plots both so the estimate stays readable
+#     back to the start of recording.
+#   rig:electricity_kwh_* are counters integrating watts (the plug's own cumulativeEnergyImported is a
+#     Matter struct published as JSON, which mqtt2prometheus cannot coerce).
+#
+# The estimate (docs/20 §5, docs/14). No wall meter yet: system power is ESTIMATED
 #   GPUs (NVML board power, exact per card)
 # + CPU package (RAPL via node-exporter; fallback from CPU busy when RAPL is absent, e.g. backfill before 30.10)
 # + CPU VRM losses (~10% of CPU) + rest of the box (RAM, 2 chipsets, NVMe, fans, pump, dock, NIC) ~55 W
 # / PSU efficiency (~0.89, 80+ Gold at 20-85% load).
-# Accuracy +-10-15%. Replace rig:power_system_wall_watts with a smart-plug reading when one exists.
+# Accuracy +-10-15% - confirmed: it under-read the plugs by ~2x (monitor, peripherals, PSU losses).
+#
+# EUR view (06.11.2026): the dashboard reports in EUR. Fixed constant, not a live feed - update it
+# when you want a new rate: 117.581053 RSD/EUR (open.er-api.com, 2026-11-06 00:02 UTC; the rig has no
+# FX exporter and an estimator must not wobble with the market). EUR tariffs: VT 0.2254, NT 0.1607.
 #
 # Tariff: EPS commercial supply, two-rate, no colour zones (docs/20 §5, sep-2026 invoice):
 #   VT 26.5 RSD/kWh, NT 18.9 RSD/kWh
@@ -15,7 +35,14 @@
 # Totals over any window R (group interval MUST stay 15s - the factor below depends on it; gaps count as 0):
 #   kWh  = sum_over_time(rig:power_system_wall_watts[R]) * 15 / 3600 / 1000
 #   RSD  = sum_over_time(rig:electricity_cost_rsd_per_hour[R]) * 15 / 3600
+#   EUR  = sum_over_time(rig:electricity_cost_eur_per_hour[R]) * 15 / 3600
 # History before 2026-10-29 23:17 UTC was backfilled with power-backfill.yml (CPU from busy-fallback).
+#
+# avg_over_time([2m]) everywhere: the plugs push values only on change and mqtt2prometheus never
+# expires them (cache.timeout 0), so instant queries on a 15 s rule interval would step/jitter; the
+# [1m] guard window matches matter_node_online going away ~1 min after a plug dies.
+# PromQL: `and` takes no on()/group_left() grouping, so every guard here is a label_replace()d
+# availability series whose label set is made literally identical to the power series it gates.
 groups:
   - name: rig_power
     interval: 15s
@@ -31,7 +58,10 @@ groups:
         expr: 55 + 0.10 * rig:power_cpu_watts
       - record: rig:power_system_dc_watts
         expr: rig:power_gpu_watts + rig:power_cpu_watts + rig:power_other_watts
-      - record: rig:power_system_wall_watts
+      # _est suffix on purpose: since 06.11 the canonical rig:power_system_wall_watts is recorded from
+      # the wall plugs in rig_power_plug below. Two groups writing one series name = last evaluation
+      # wins, so each series must have exactly ONE writer.
+      - record: rig:power_system_wall_est_watts
         expr: rig:power_system_dc_watts / 0.89
       - record: rig:belgrade_dst
         expr: |
@@ -44,5 +74,98 @@ groups:
         expr: (hour(vector(time())) + 1 + rig:belgrade_dst) % 24
       - record: rig:electricity_price_rsd_per_kwh
         expr: 18.9 + (rig:local_hour >= bool 8) * (26.5 - 18.9)
+      - record: rig:electricity_cost_rsd_per_hour_est
+        expr: rig:power_system_wall_est_watts / 1000 * rig:electricity_price_rsd_per_kwh
+
+  - name: rig_power_plug
+    interval: 15s
+    rules:
+      # Measured wall power per socket, guarded by node availability: mqtt2prometheus never expires a
+      # value (cache.timeout: 0), so a dead plug would keep exporting its last watts forever.
+      # `and` compares the FULL label set (no on()/group_left() grouping is allowed for it), so both
+      # sides are normalized first: avg_over_time()/sum by () strip __name__, topic is blanked
+      # (assigning "" deletes a label), and rig:power_plug_online carries sensor=<device name>.
+      - record: rig:power_plug_online
+        expr: rig:node_online_named{sensor=~"Rig|Minisforum|Уголь"}
+      # Availability re-labelled to the bridge's NAMED-tree keys (device names), so named-tree
+      # metrics can be gated by it with a plain `unless on(sensor)` — availability itself only ever
+      # carries the node id. Nodes with no NodeLabel (9, 22, 28) get "node <id>"; they publish no
+      # named topics anyway. Keep this list in sync with deploy/smart-home/mqtt2prometheus-matter.yaml
+      # comments and gen-smarthome-dashboard.py NODES.
+      - record: rig:node_online_named
+        expr: |
+          label_replace(matter_node_online{sensor="7"}, "sensor", "Комната", "", "") or
+          label_replace(matter_node_online{sensor="8"}, "sensor", "Балкон", "", "") or
+          label_replace(matter_node_online{sensor="9"}, "sensor", "node 9", "", "") or
+          label_replace(matter_node_online{sensor="11"}, "sensor", "У телевизора", "", "") or
+          label_replace(matter_node_online{sensor="12"}, "sensor", "Над столом", "", "") or
+          label_replace(matter_node_online{sensor="13"}, "sensor", "Уголь", "", "") or
+          label_replace(matter_node_online{sensor="17"}, "sensor", "Пульт у дивана", "", "") or
+          label_replace(matter_node_online{sensor="19"}, "sensor", "Пульт на кухне", "", "") or
+          label_replace(matter_node_online{sensor="20"}, "sensor", "Стол колесо", "", "") or
+          label_replace(matter_node_online{sensor="22"}, "sensor", "node 22", "", "") or
+          label_replace(matter_node_online{sensor="23"}, "sensor", "Rig", "", "") or
+          label_replace(matter_node_online{sensor="25"}, "sensor", "Minisforum", "", "") or
+          label_replace(matter_node_online{sensor="28"}, "sensor", "node 28", "", "") or
+          label_replace(matter_node_online{sensor="31"}, "sensor", "Уголь пульт", "", "") or
+          label_replace(matter_node_online{sensor="33"}, "sensor", "Телевизор колесо", "", "")
+      # Matter node labels live only in the bridge, so node id -> device name is spelled out above.
+      # Update it if a plug is renamed (a stale mapping just makes the series go empty, never wrong).
+      - record: rig:power_plug_rig_watts
+        expr: |
+          label_replace(avg_over_time(matter_active_power_watts{sensor="Rig"}[2m]), "topic", "", "topic", "(.*)")
+          and
+          sum by (sensor, instance, job) (avg_over_time(rig:power_plug_online{sensor="Rig"}[1m]))
+      - record: rig:power_plug_minisforum_watts
+        expr: |
+          label_replace(avg_over_time(matter_active_power_watts{sensor="Minisforum"}[2m]), "topic", "", "topic", "(.*)")
+          and
+          sum by (sensor, instance, job) (avg_over_time(rig:power_plug_online{sensor="Minisforum"}[1m]))
+      # Whole-home measured load: every device that reports metering at all (the GRILLPLATS/TOFSMYGGA
+      # plugs report it, the KAJPLATS bulbs do not).
+      - record: rig:power_all_plugs_watts
+        expr: |
+          sum by () (
+            label_replace(avg_over_time(matter_active_power_watts[2m]), "topic", "", "topic", "(.*)")
+            and
+            sum by (sensor, instance, job) (avg_over_time(rig:power_plug_online[1m])))
+      # sum by () first: the two plug series carry different sensor labels and vector `+` refuses to
+      # match them (silent empty result, which showed up as "total = 0" with both sockets reporting).
+      - record: rig:power_system_wall_plug_watts
+        expr: |
+          (sum by () (rig:power_plug_rig_watts) or vector(0))
+          + (sum by () (rig:power_plug_minisforum_watts) or vector(0))
+      # Fallback chain: measured -> estimate, so the dashboard never goes blank when a plug drops.
+      - record: rig:power_system_wall_source_watts
+        expr: rig:power_system_wall_plug_watts or rig:power_system_wall_est_watts
+      - record: rig:electricity_cost_rsd_per_hour_plug
+        expr: rig:power_system_wall_plug_watts / 1000 * rig:electricity_price_rsd_per_kwh
+      - record: rig:electricity_kwh_per_hour_plug
+        expr: rig:power_system_wall_plug_watts / 1000
+      # The one series to integrate for "kWh/cost so far": measured where a plug reports, estimate
+      # only in the gaps before 2026-11-06 (sum_over_time counts a missing sample as 0, so the two
+      # never double-count).
+      - record: rig:electricity_cost_rsd_per_hour_source
+        expr: rig:electricity_cost_rsd_per_hour_plug or rig:electricity_cost_rsd_per_hour_est
+      - record: rig:electricity_kwh_per_hour_est
+        expr: rig:power_system_wall_est_watts / 1000
+      - record: rig:electricity_kwh_per_hour_minisforum
+        expr: rig:power_plug_minisforum_watts / 1000
+      # --- EUR mirror of the RSD money rules (dashboards show EUR since 06.11; RSD rules stay) ---
+      - record: rig:electricity_price_eur_per_kwh
+        expr: rig:electricity_price_rsd_per_kwh / 117.581053
+      - record: rig:electricity_cost_eur_per_hour
+        expr: rig:electricity_cost_rsd_per_hour / 117.581053
+      - record: rig:electricity_cost_eur_per_hour_plug
+        expr: rig:electricity_cost_rsd_per_hour_plug / 117.581053
+      - record: rig:electricity_cost_eur_per_hour_source
+        expr: rig:electricity_cost_rsd_per_hour_source / 117.581053
+      - record: rig:electricity_kwh_per_hour_source
+        expr: rig:power_system_wall_source_watts / 1000
+      # Canonical names, kept so every pre-existing consumer (monitor :8090, build_dashboards.py,
+      # docs, old queries) gets the measured value without being rewritten. Single writer: the
+      # estimate lives in *_est_watts / *_cost_rsd_per_hour_est now.
+      - record: rig:power_system_wall_watts
+        expr: rig:power_system_wall_plug_watts
       - record: rig:electricity_cost_rsd_per_hour
-        expr: rig:power_system_wall_watts / 1000 * rig:electricity_price_rsd_per_kwh
+        expr: rig:electricity_cost_rsd_per_hour_plug
