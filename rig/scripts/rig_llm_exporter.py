@@ -6,6 +6,9 @@ lanes sharing one expert arena in RAM:
   main  = FN 5090    :8001  (LiteLLM model qwen3.8-flash-next-iq3_s)
   l2    = FN 3090 #1 :8003  (pool member of qwen3.8-flash-next-3090)
   l3    = FN 3090 #2 :8004  (pool member of qwen3.8-flash-next-3090)
+  ds    = DS        :18080 (Project Maya DeepSeek-V4.1-Flash on all three GPUs, LiteLLM
+          deepseek-v4.1-flash-maya; 12.11.2026). The rig runs FN OR DS (rig_mode.sh), so either the
+          three FN lanes or ds report rig_llm_up 1. ds has gpu="all GPUs" and no uuid/gpu_index.
 Strata speaks custom JSON (/metrics), so Prometheus alone has no tok/s; this exporter samples every
 lane once per second and publishes one metric family per quantity with labels
 {model, engine, lane, gpu, gpu_index, uuid}, so one PromQL query covers every lane/GPU.
@@ -52,10 +55,13 @@ ENGINES = {
            "gpu_index": "1", "uuid": "2e674bbf-af1e-4ad3-17f6-abc8e47b4f36"},
     "l3": {"model": "qwen3.8-flash-next-3090", "engine": "strata", "lane": "FN 3090 #2", "gpu": "RTX 3090 #2",
            "gpu_index": "2", "uuid": "9c7268f4-61e4-a63f-7a6f-e33d57743219"},
+    "ds": {"model": "deepseek-v4.1-flash-maya", "engine": "maya", "lane": "DS", "gpu": "all GPUs",
+           "gpu_index": "all", "uuid": "all"},
 }
 URLS = {"main": os.environ.get("STRATA_URL", "http://127.0.0.1:8001"),
         "l2": os.environ.get("L2_URL", "http://127.0.0.1:8003"),
-        "l3": os.environ.get("L3_URL", "http://127.0.0.1:8004")}
+        "l3": os.environ.get("L3_URL", "http://127.0.0.1:8004"),
+        "ds": os.environ.get("DS_URL", "http://127.0.0.1:18080")}
 GPUS = {  # uuid -> labels
     "5565fcfc-574c-5daa-bd59-e29329f6e466": {"index": "0", "gpu": "RTX 5090", "role": "FN 5090 (Strata :8001)"},
     "2e674bbf-af1e-4ad3-17f6-abc8e47b4f36": {"index": "1", "gpu": "RTX 3090 #1", "role": "FN 3090 #1 (Strata :8003)"},
@@ -75,6 +81,7 @@ counters = {e: {} for e in ENGINES}
 up = {e: 0 for e in ENGINES}
 rates = {e: {"decode": deque(maxlen=WINDOW), "prefill": deque(maxlen=WINDOW)} for e in ENGINES}
 _prev_gen = {}  # eid -> last totals.output_tokens (decode-flow bit between samples)
+_ds_drafts = {"off": 0, "acc": 0, "last": time.time(), "seen": time.time()}   # cumulative since exporter start
 
 
 def read_strata_key():
@@ -107,7 +114,7 @@ def rate_from(eid, key, val, t):
 
 
 def sample_strata(eid, t):
-    d = json.loads(get(URLS[eid] + "/metrics", read_strata_key()))
+    d = json.loads(get(URLS[eid] + "/metrics", None if eid == "ds" else read_strata_key()))
     live, tot, eng = d.get("live") or {}, d.get("totals") or {}, d.get("engine") or {}
     ctx_max = float(eng.get("max_context") or 0)
     held = [s.get("held_tokens", 0) or 0 for s in live.get("slots", [])]
@@ -142,6 +149,15 @@ def sample_strata(eid, t):
          "gen": tot.get("output_tokens", 0), "pre_s": tot.get("prompt_ms", 0) / 1000.0,
          "dec_s": tot.get("decode_ms", 0) / 1000.0,
          "drafts_off": tot.get("drafts_offered", 0), "drafts_acc": tot.get("drafts_accepted", 0)}
+    if eid == "ds":   # Maya keeps drafts per request only: add each request row once (by its start time)
+        for r in d.get("requests") or []:
+            rt = float(r.get("time") or 0)
+            if rt > _ds_drafts["last"]:
+                _ds_drafts["off"] += r.get("drafts_offered") or 0
+                _ds_drafts["acc"] += r.get("drafts_accepted") or 0
+                _ds_drafts["seen"] = max(_ds_drafts["seen"], rt)
+        _ds_drafts["last"] = _ds_drafts["seen"]
+        c["drafts_off"], c["drafts_acc"] = _ds_drafts["off"], _ds_drafts["acc"]
     dec_delta = 0.0 if prev is None else max(0.0, tot.get("output_tokens", 0) - prev)
     return g, c, (max(float(dec or 0), dec_delta) if st != "idle" else 0.0), float(pre or 0)
 

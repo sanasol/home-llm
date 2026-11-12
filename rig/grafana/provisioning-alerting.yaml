@@ -55,7 +55,7 @@
               },
               "datasourceUid": "rigprom",
               "model": {
-                "expr": "up == 0",
+                "expr": "up{job!=\"strata\"} == 0 or (up{job=\"strata\"} == 0 unless on() (rig_llm_up{lane=\"DS\"} == 1))",
                 "instant": true,
                 "refId": "A"
               }
@@ -461,7 +461,7 @@
               },
               "datasourceUid": "rigprom",
               "model": {
-                "expr": "rig_llm_up == 0",
+                "expr": "(rig_llm_up{engine=\"strata\"} == 0 unless on() (rig_llm_up{lane=\"DS\"} == 1)) or (rig_llm_up{lane=\"DS\"} == 0 unless on() (max(rig_llm_up{engine=\"strata\"}) == 1))",
                 "instant": true,
                 "refId": "A"
               }

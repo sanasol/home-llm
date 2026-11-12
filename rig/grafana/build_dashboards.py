@@ -10,7 +10,8 @@ House rules (docs/14, "Grafana dashboard rules"), applied by enforce() to EVERY 
   * dashboard graphTooltip = 1 (shared crosshair across panels);
   * GPU series are named via `* on(uuid) group_left(gpu) rig_gpu_info`, never raw uuids;
   * LLM series come from rig_llm_* (one family covers the three Strata lanes FN 5090 /
-    FN 3090 #1 / FN 3090 #2), legend "{{lane}}" (= human lane name; GPU panels use {{gpu}}).
+    FN 3090 #1 / FN 3090 #2 and the DS lane = Maya DeepSeek on all GPUs), legend "{{lane}}"
+    (= human lane name; GPU panels use {{gpu}}). The rig runs FN OR DS (rig_mode.sh).
 Edit THIS file, never the generated JSON.
 """
 import json
@@ -23,7 +24,7 @@ TOOLTIP = {"mode": "multi", "sort": "desc", "hideZeros": False}
 LEGEND = {"displayMode": "list", "placement": "bottom", "showLegend": True}
 LLM = "{{lane}}"
 GPU_JOIN = " * on(uuid) group_left(gpu) rig_gpu_info"
-LANES = (("0", "FN 5090"), ("1", "FN 3090 #1"), ("2", "FN 3090 #2"))   # nvidia-smi index -> lane
+LANES = (("0", "FN 5090"), ("1", "FN 3090 #1"), ("2", "FN 3090 #2"), ("all", "DS"))   # gpu_index -> lane (DS: all GPUs)
 
 
 def enforce(d):
@@ -144,11 +145,11 @@ def overview():
     b.row("LLM speed — every model / GPU (rig_llm_exporter :9097)")
     for e, gpu in LANES:
         b.stat(f"Decode t/s · {gpu}",
-               [(f'rig_llm_decode_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=4,
+               [(f'rig_llm_decode_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=3,
                desc="Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle.")
     for e, gpu in LANES:
         b.stat(f"Prefill t/s · {gpu}",
-               [(f'rig_llm_prefill_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=4,
+               [(f'rig_llm_prefill_tokens_per_second{{gpu_index="{e}"}}', "{{lane}}")], unit="none", w=3,
                desc="Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s.")
     b.ts("Decode t/s by lane (live)", [("rig_llm_decode_tokens_per_second", LLM)], w=12, minv=0,
          desc="Instantaneous decode speed while generating. Gaps to 0 = idle.")
@@ -161,14 +162,15 @@ def overview():
          [("rate(rig_llm_generation_tokens_total[1m])", LLM), ("sum(rate(rig_llm_generation_tokens_total[1m]))", "total")],
          w=8, minv=0, desc="Aggregate output tokens per second across all parallel streams.")
     b.ts("Decode t/s per watt (GPU efficiency)",
-         [("(rig_llm_decode_tokens_per_second > 0) / on(uuid) group_left() nvidia_smi_power_draw_watts", LLM)],
-         w=8, minv=0, decimals=2, desc="Live decode t/s divided by that card's power draw.")
+         [("(rig_llm_decode_tokens_per_second > 0) / on(uuid) group_left() nvidia_smi_power_draw_watts", LLM),
+          ('(rig_llm_decode_tokens_per_second{lane="DS"} > 0) / scalar(sum(nvidia_smi_power_draw_watts))', LLM)],
+         w=8, minv=0, decimals=2, desc="Live decode t/s divided by that card's power draw (DS: by all GPUs together).")
 
     b.row("LLM engines — load, KV, cache")
     b.ts("Requests running / waiting", [("rig_llm_requests_running", "{{lane}} running"),
                                         ("rig_llm_requests_waiting", "{{lane}} waiting")], w=8, minv=0, decimals=0)
     b.ts("KV cache / context fill", [("rig_llm_kv_usage_ratio", LLM)], unit="percentunit", w=8, minv=0, maxv=1,
-         desc="Largest slot context / max context (FN 5090: 256K, FN 3090 lanes: 128K).")
+         desc="Largest slot context / max context (FN 5090: 512K, FN 3090 lanes: 256K, DS: 512K).")
     b.ts("Prefix cache hit ratio (30m)",
          [("rate(rig_llm_prompt_cached_tokens_total[30m]) / (rate(rig_llm_prompt_tokens_total[30m]) > 0)", LLM)],
          unit="percentunit", w=8, minv=0, maxv=1,
@@ -183,12 +185,14 @@ def overview():
     b.ts("Requests/min completed", [("rate(rig_llm_requests_total[5m]) * 60", LLM)], w=8, minv=0)
     b.ts("MTP drafts accepted / offered (15m)", [
         ("rate(rig_llm_drafts_accepted_total[15m]) / (rate(rig_llm_drafts_offered_total[15m]) > 0)", LLM)],
-        unit="percentunit", w=8, minv=0, maxv=1, desc="Strata MTP speculative decoding acceptance per lane.")
+        unit="percentunit", w=8, minv=0, maxv=1,
+        desc="Speculative decoding acceptance per lane: Strata MTP on FN, DSpark + prompt lookup on DS.")
     b.ts("Host RAM available (shared expert arena lives in RAM)",
          [('node_memory_MemAvailable_bytes{job="node"}', "MemAvailable"), ('node_memory_SwapFree_bytes{job="node"}', "Swap free")],
          unit="bytes", w=8, minv=0, desc="Three Strata lanes share one 50 GB expert arena (/mnt/strata-arena); "
                                           "the engines keep >= 2.5 GiB free for parking conversations.")
-    b.ts("Engine up", [("rig_llm_up", LLM)], w=8, minv=0, maxv=1, decimals=0, draw="line")
+    b.ts("Engine up", [("rig_llm_up", LLM)], w=8, minv=0, maxv=1, decimals=0, draw="line",
+         desc="1 = answering. The rig runs FN (three lanes) OR DS (rig_mode.sh): the other mode reads 0 on purpose.")
 
     b.row("GPUs")
     b.ts("GPU util %", [("nvidia_smi_utilization_gpu_ratio" + GPU_JOIN, "{{gpu}}")], unit="percentunit", w=8, minv=0, maxv=1)

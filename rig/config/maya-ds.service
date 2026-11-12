@@ -1,0 +1,23 @@
+[Unit]
+Description=Project Maya: DeepSeek-V4.1-Flash Maya-XS on the whole rig (:18080, 512K) - exclusive with llm-* lanes
+After=network-online.target
+Wants=network-online.target
+Conflicts=llm-main.service llm-lane2.service llm-lane3.service
+
+[Service]
+Type=simple
+User=al
+Environment=HOME=~
+Environment=PATH=/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CPATH=~/maya/.cuda-headers/nvidia/cu13/include
+LimitMEMLOCK=infinity
+WorkingDirectory=~/maya
+ExecStart=~/maya/.venv/bin/python ~/maya/maya.py --config ~/maya/maya-ds4.json --port 18080 --plain
+KillSignal=SIGINT
+TimeoutStartSec=infinity
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

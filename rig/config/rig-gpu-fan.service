@@ -1,6 +1,6 @@
 [Unit]
-Description=rig: fan curve for RTX 3090 blower
-After=nvidia-persistenced.service rig-gpu-power.service
+Description=rig: 3090 junction fan booster (100% at hotspot >=95C, VBIOS curve below 90C)
+After=nvidia-persistenced.service rig-gpu-power.service gputemps-exporter.service
 [Service]
 ExecStart=/opt/rig/gpu-fan.py
 ExecStopPost=/opt/rig/gpu-fan.py --reset

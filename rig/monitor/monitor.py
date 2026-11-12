@@ -1,6 +1,8 @@
 """Rig monitor: one page for the whole box — three Strata lanes of Qwen3.8-Flash-Next
 (main :8001 on the RTX 5090, lane2 :8003 on 3090 idx 1, lane3 :8004 on 3090 idx 2;
-docs/23), all three GPUs and the host.
+docs/23) plus the "ds" lane (Project Maya DeepSeek on all three GPUs, :18080, unit maya-ds;
+the rig runs FN or DS, rig_mode.sh), all three GPUs and the host. Maya's /metrics has the same
+engine/live/requests/totals shape as Strata's, so one sampler reads all four.
 
 Samples every lane's Strata /metrics?requests=all (JSON, one shared API key), nvidia-smi
 (+ dmon -s t for real PCIe Rx/Tx MB/s), /proc and hwmon. Every point is persisted to
@@ -43,6 +45,11 @@ L3_URL = os.environ.get("L3_URL", "http://127.0.0.1:8004")
 MAIN_UNIT = os.environ.get("MAIN_UNIT", "llm-main")
 L2_UNIT = os.environ.get("L2_UNIT", "llm-lane2")
 L3_UNIT = os.environ.get("L3_UNIT", "llm-lane3")
+DS_URL = os.environ.get("DS_URL", "http://127.0.0.1:18080")      # Project Maya (DeepSeek), rig DS mode
+DS_UNIT = os.environ.get("DS_UNIT", "maya-ds")
+DS_LOG = os.environ.get("DS_LOG", "~/maya/maya-ds4.log")
+RIG_MODE_SH = os.environ.get("RIG_MODE_SH", "~/bin/rig_mode.sh")   # rig/scripts/rig_mode.sh
+MODE_UNIT = "rig-mode-switch"   # transient unit running one switch: survives monitor restarts, doubles as a lock
 PORT = int(os.environ.get("PORT", "8090"))
 PROM = os.environ.get("PROM_URL", "http://127.0.0.1:9090")
 HIST_DB = os.environ.get("HIST_DB", str(Path(__file__).with_name("hist.db")))
@@ -57,9 +64,10 @@ PAGE = Path(__file__).with_name("index.html")
 # first scrape — the live ones come from lane_meta()/lane_names() (GPU, context, KV, slots read from the lanes)
 ENG = {"main": {"label": "FN main", "sub": "Strata :8001"},
        "l2": {"label": "FN lane2", "sub": "Strata :8003"},
-       "l3": {"label": "FN lane3", "sub": "Strata :8004"}}
-LANES = {"main": (STRATA, MAIN_UNIT), "l2": (L2_URL, L2_UNIT), "l3": (L3_URL, L3_UNIT)}
-CKEY = {"main": "m", "l2": "l2", "l3": "l3"}   # key in point["counters"] (main stays "m": history continuity)
+       "l3": {"label": "FN lane3", "sub": "Strata :8004"},
+       "ds": {"label": "DS", "sub": "Maya :18080"}}
+LANES = {"main": (STRATA, MAIN_UNIT), "l2": (L2_URL, L2_UNIT), "l3": (L3_URL, L3_UNIT), "ds": (DS_URL, DS_UNIT)}
+CKEY = {"main": "m", "l2": "l2", "l3": "l3", "ds": "ds"}   # key in point["counters"] (main stays "m": history continuity)
 _ui, _meta, _names, _boot, _up_prev = {}, {}, {}, {}, {}   # per lane: unit info, description, labels, boot progress
 
 history = deque(maxlen=HISTORY)
@@ -354,7 +362,10 @@ def strata_rows(j, eid):
     rows = []
     for r in sorted((j or {}).get("requests", []) or [], key=lambda x: float(x.get("time") or 0)):
         prefill = round(r["prompt_read"] / (r["prompt_ms"] / 1000)) if r.get("prompt_ms") and r.get("prompt_read") else None
-        rows.append({"ts": float(r.get("time") or 0), "eng": eid, "id": r.get("id"), "status": r.get("finish"),
+        if prefill is None and r.get("prefill_tok_s"):
+            prefill = round(r["prefill_tok_s"])
+        rid = r.get("id") or (f"{eid}-{float(r.get('time') or 0):.3f}" if eid == "ds" else None)
+        rows.append({"ts": float(r.get("time") or 0), "eng": eid, "id": rid, "status": r.get("finish"),
                      "prompt": r.get("prompt_tokens"), "reused": r.get("reused"),
                      "output": r.get("output_tokens"), "prefill_tps": prefill,
                      "decode_tps": r.get("decode_tok_s"), "dur": r.get("duration_s"),
@@ -418,9 +429,30 @@ def ctx_label(n):
     return f"{n // 1048576}M" if n % 1048576 == 0 else f"{round(n / 1024)}K"
 
 
+def ds_meta(raw, ui):
+    """Maya (DeepSeek) lane: everything from its own /metrics (engine + hardware_static)."""
+    eng = (raw or {}).get("engine") or {}
+    hs = (raw or {}).get("hardware_static") or {}
+    ctx = eng.get("context") or eng.get("max_context")
+    slots = None
+    if raw is not None:
+        try:
+            slots = len(http_json(DS_URL + "/slots")) or None
+        except Exception:
+            pass
+    return {"model": eng.get("model_label") or eng.get("model"), "version": eng.get("maya_version") or eng.get("version"),
+            "ctx": int(ctx) if ctx else None, "ctx_label": ctx_label(ctx), "kv": eng.get("kv"), "slots": slots,
+            "rope": None, "images": eng.get("images"), "gpu_name": hs.get("gpu_name"), "gpu_index": None,
+            "port": int(DS_URL.rsplit(":", 1)[1]), "preset": None, "unit": DS_UNIT, "log": DS_LOG, "pending": [],
+            "arena_mib": None, "trained_ctx": eng.get("trained_context"),
+            "dspark": eng.get("dspark"), "gpu_count": hs.get("gpu_count"), "ui": ui.get("active")}
+
+
 def lane_meta(eid, raw, ui, gpu_list):
     """What this lane runs NOW: live engine block first, the last launch's args next, the preset last
     (a preset value that differs from the live one = a change waiting for a restart)."""
+    if eid == "ds":
+        return ds_meta(raw, ui)
     preset = ui.get("preset")
     st = _json_file(LAUNCH_DIR / f"{preset}.json") if preset else {}
     pr = _json_file(PRESET_DIR / f"{preset}.json") if preset else {}
@@ -456,6 +488,8 @@ def lane_meta(eid, raw, ui, gpu_list):
 def lane_names(metas):
     """Card labels from the GPU each lane runs on: 'FN 5090', 'FN 3090 #1', 'FN 3090 #2' (numbered by GPU index)."""
     short = {}
+    ds = metas.get("ds")
+    metas = {e: m for e, m in metas.items() if e != "ds"}
     for eid, m in metas.items():
         mm = re.search(r"(\d{4})", m.get("gpu_name") or "")
         short[eid] = mm.group(1) if mm else (m.get("gpu_name") or eid)
@@ -468,6 +502,11 @@ def lane_names(metas):
                 (m.get("ctx_label") or "?") + (f" YaRN×{m['rope']:g}" if m.get("rope") else ""),
                 f"KV {m.get('kv')}", f"{m.get('slots')} slot{'s' if m.get('slots', 1) > 1 else ''}"]
         out[eid] = {"label": label, "sub": " · ".join(b for b in bits if b)}
+    if ds is not None:
+        bits = [f":{ds.get('port')}", f"{ds.get('gpu_count')} GPUs" if ds.get("gpu_count") else None,
+                ds.get("ctx_label"), f"KV {ds.get('kv')}" if ds.get("kv") else None,
+                f"{ds.get('slots')} slots" if ds.get("slots") else None, "DSpark" if ds.get("dspark") else None]
+        out["ds"] = {"label": "DS", "sub": " · ".join(b for b in bits if b)}
     return out
 
 
@@ -505,6 +544,8 @@ def _log_tail(path, nbytes=262144):
 def boot_status(eid, raw, ui, meta, names):
     """None when the lane is up and serving; otherwise {phase, pct, elapsed_s, detail, state} for the card."""
     now = time.time()
+    if eid == "ds":
+        return ds_boot_status(raw, ui)
     active = ui.get("active")
     text = _log_tail(meta.get("log")) if meta.get("log") else ""
     k = text.rfind("engine started")
@@ -554,6 +595,132 @@ def boot_status(eid, raw, ui, meta, names):
     t0 = ui.get("since") or start_ts                  # count from the unit start: launcher prep is part of the wait
     return {"state": "starting", "phase": phase, "pct": round(pct, 1),
             "elapsed_s": round(now - t0) if t0 else None, "detail": detail}
+
+
+# Maya's log markers of one start (the log is appended across runs: read the block after the last start)
+DS_STAGES = [
+    (r"starting the engine", 5, "reading the model's weights"),
+    (r"--mmap-experts", 15, "planning expert placement"),
+    (r"DONTNEED hints", 25, "copying experts into RAM"),
+    (r"copied experts pinned", 55, "pinning experts"),
+    (r"of the CPU lane's \d+ experts copied into RAM", 65, "experts in RAM"),
+    (r"CUDA0 layers \[", 80, "loading GPU layers"),
+    (r"maya ds4 serve: GEN", 90, "starting the server"),
+    (r"^ready: ", 100, "ready"),
+]
+
+
+def ds_boot_status(raw, ui):
+    """None when Maya serves; else {state, phase, pct, elapsed_s, detail} from the unit + its log stages."""
+    if raw is not None:   # Maya answers /metrics: serving (its log tail is mostly answer progress, no start marker)
+        return None
+    active, since = ui.get("active"), ui.get("since")
+    elapsed = round(time.time() - since) if since else None
+    if active not in ("active", "activating", "reloading"):
+        if raw is not None:
+            return None
+        return {"state": "down", "phase": "failed" if active == "failed" else "stopped (FN mode)", "pct": 0,
+                "elapsed_s": None, "detail": f"unit {DS_UNIT} {active or 'inactive'}"}
+    text = _log_tail(DS_LOG, 131072)
+    k = text.rfind("starting the engine")
+    block = text[k:] if k >= 0 else ""
+    if re.search(r"^ready: ", block, re.M):
+        if raw is not None:
+            return None
+        if elapsed is not None and elapsed > 600:
+            return {"state": "down", "phase": "engine not answering", "pct": 0, "elapsed_s": elapsed, "detail": ""}
+        # the unit just (re)started and has not logged its own start yet: the block is the previous run's
+        return {"state": "starting", "phase": "launcher starting", "pct": 2, "elapsed_s": elapsed, "detail": ""}
+    pct, phase = 2, "launcher starting"
+    for rx, p, ph in DS_STAGES:
+        if re.search(rx, block, re.M):
+            pct, phase = p, ph
+    if elapsed is not None:   # a start takes ~35 s; the log lands in bursts, so let the clock carry the bar
+        pct = max(pct, min(95, round(elapsed / 40 * 100)))
+    return {"state": "starting", "phase": phase, "pct": pct, "elapsed_s": elapsed, "detail": ""}
+
+
+# ------------------------------------------------- rig mode switch (FN lanes <-> DS)
+FN_EIDS = ("main", "l2", "l3")
+_switch = {}   # the switch this monitor started: {"target", "t0"}; outcome kept until the next one
+
+
+def mode_status():
+    """{current, target, pct, phase, elapsed_s, error, log}: what runs now and, while a switch runs, its progress."""
+    try:
+        out = subprocess.run(["systemctl", "show", "-p", "ActiveState,Description,ExecMainStartTimestamp",
+                              "--timestamp=unix", MODE_UNIT], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        out = ""
+    d = dict(line.partition("=")[::2] for line in out.splitlines())
+    running = d.get("ActiveState") in ("active", "activating")
+    m = re.search(r"-> (fn|ds)", d.get("Description", ""))
+    if running and m:
+        if _switch.get("target") != m.group(1):
+            ts = d.get("ExecMainStartTimestamp", "").lstrip("@")
+            _switch.clear()
+            _switch.update(target=m.group(1), t0=float(ts) if ts.replace(".", "").isdigit() else time.time())
+    act = {e: (_ui.get(e) or {}).get("active") for e in ENG}
+    if act.get("ds") == "active":
+        current = "ds"
+    elif any(act.get(e) == "active" for e in FN_EIDS):
+        current = "fn"
+    else:
+        current = "off"
+    out = {"current": current, "target": None, "pct": None, "phase": None, "elapsed_s": None, "error": None}
+    tgt = _switch.get("target")
+    if not tgt:
+        return out
+    up = {e: _boot.get(e) is None and act.get(e) == "active" for e in ENG}
+    lanes = ("ds",) if tgt == "ds" else FN_EIDS
+    others = FN_EIDS if tgt == "ds" else ("ds",)
+    if running:
+        if any(act.get(e) in ("active", "deactivating") for e in others):
+            pct, phase = 3, "stopping " + ("the FN lanes" if tgt == "ds" else "DS")
+        else:
+            w = {"ds": 1.0} if tgt == "ds" else {"main": 0.6, "l2": 0.2, "l3": 0.2}
+            pct = 5 + 0.95 * sum(w[e] * (100 if up[e] else ((_boot.get(e) or {}).get("pct") or 0)) for e in lanes)
+            todo = [e for e in lanes if not up[e]]
+            b = _boot.get(todo[0]) if todo else None
+            if b and b.get("state") == "down":
+                b = {"phase": "starting"}
+            name = (_names.get(todo[0]) or ENG[todo[0]])["label"] if todo else ""
+            phase = f"{name}: {b['phase']}" if b else ("finishing" if not todo else f"{name}: starting")
+        out.update(target=tgt, pct=round(min(pct, 99), 1), phase=phase, elapsed_s=round(time.time() - _switch["t0"]))
+        return out
+    # the switch unit is gone: done if the target serves, else report its last lines once
+    if all(up[e] for e in lanes):
+        _switch.clear()
+        return out
+    if time.time() - _switch["t0"] < 15:     # systemd-run has not shown the unit yet
+        out.update(target=tgt, pct=1, phase="starting the switch", elapsed_s=round(time.time() - _switch["t0"]))
+        return out
+    try:
+        tail = subprocess.run(["journalctl", "-u", MODE_UNIT, "-n", "6", "-o", "cat", "--no-pager"],
+                              capture_output=True, text=True, timeout=5).stdout.strip().splitlines()
+    except Exception:
+        tail = []
+    out.update(target=tgt, error="switch to " + tgt.upper() + " did not finish", log=tail[-6:])
+    return out
+
+
+def start_switch(target):
+    """Launch rig_mode.sh <target> as its own transient unit. Returns (ok, message)."""
+    if target not in ("fn", "ds"):
+        return False, "mode must be fn or ds"
+    st = mode_status()
+    if st.get("target") and not st.get("error"):
+        return False, f"a switch to {st['target'].upper()} is already running"
+    if st["current"] == target:
+        return False, f"the rig already runs {target.upper()}"
+    r = subprocess.run(["sudo", "-n", "systemd-run", f"--unit={MODE_UNIT}", "--collect",
+                        f"--description=rig mode -> {target}", RIG_MODE_SH, target],
+                       capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        return False, (r.stderr or r.stdout).strip()[:300]
+    _switch.clear()
+    _switch.update(target=target, t0=time.time())
+    return True, f"switching to {target.upper()}"
 
 
 # ------------------------------------------------- request attribution (hook log + serve logs)
@@ -759,7 +926,7 @@ def sample(prev, prev_t, tick):
     raws = {}
     for eid, (url, _unit) in LANES.items():
         try:
-            raws[eid] = http_json(url + "/metrics", key, "requests=all")
+            raws[eid] = http_json(url + "/metrics", None if eid == "ds" else key, "requests=all")
         except Exception:
             raws[eid] = None
     g = []
@@ -817,7 +984,7 @@ def sample(prev, prev_t, tick):
         point["sys_power"] = round((sum(point["gpu_power_by"]) + (en["cpu_w"] or 0) + (en["other_w"] or 0)) * en["psu_k"], 0)
 
     svc = None
-    booting = any(_boot.get(e) for e in ENG)
+    booting = any(_boot.get(e) for e in ENG) or bool(_switch)
     if tick % 5 == 0 or booting or not _ui:
         for eid, (_url, unit) in LANES.items():
             _ui[eid] = unit_info(unit) or _ui.get(eid, {})
@@ -854,7 +1021,7 @@ def sample(prev, prev_t, tick):
                 fresh.add((eid, r.get("id")))
     try:
         hook_events()
-        serve_events({eid: _ui.get(eid, {}).get("preset") for eid in ENG})
+        serve_events({eid: _ui.get(eid, {}).get("preset") for eid in ENG if eid != "ds"})
     except Exception as e:
         print("attribution tail failed:", repr(e), flush=True)
     enrich_rows(rows, fresh)
@@ -881,6 +1048,10 @@ def sample(prev, prev_t, tick):
             state["requests"] = sorted(rows + keep, key=lambda r: r["ts"] or 0)  # chronological; page sorts newest-first
         if svc:
             state["services"] = svc
+        try:
+            state["mode"] = mode_status()
+        except Exception as e:
+            print("mode status failed:", repr(e), flush=True)
     db_insert("hist1", t, point)
     if tick % ROLL_S == 0:
         rollup_and_prune()
@@ -1154,6 +1325,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send(Path(__file__).with_name("history.html").read_bytes(), "text/html; charset=utf-8")
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        if u.path != "/api/mode":
+            return self.send_error(404)
+        # CSRF guard: a custom header forces a CORS preflight this server never answers, so only this page's
+        # own fetch() can send it (ponytail: no auth - the monitor is LAN/WG/Tailscale-only, as before)
+        if self.headers.get("X-Rig-Mode") != "1":
+            return self.send_error(403)
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0) or 2) or b"{}")
+        except ValueError:
+            body = {}
+        ok, msg = start_switch(str(body.get("mode") or ""))
+        self.send_response(200 if ok else 409)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": ok, "message": msg}).encode())
 
 
 _energy = {}  # last Prometheus power/cost snapshot (estimate; rules in rig/config/prometheus-rules/power.yml)

@@ -22,8 +22,10 @@ TEMP_PAL = [(40, (0, 80, 255)), (60, (0, 255, 120)), (72, (255, 200, 0)),
             (80, (255, 90, 0)), (88, (255, 0, 0))]
 LOAD_PAL = [(0.0, (0, 40, 255)), (0.5, (160, 0, 255)), (1.0, (255, 0, 40))]
 RUN_COL = [(0, 200, 255), (0, 255, 80), (255, 220, 0), (255, 0, 200)]
-DEC_FULL = {"0": 250.0, "1": 130.0, "2": 130.0}      # decode t/s full-scale per lane
-PRE_FULL = {"0": 7000.0, "1": 6500.0, "2": 6500.0}   # prefill t/s full-scale per lane
+DEC_FULL = {"0": 250.0, "1": 130.0, "2": 130.0, "ds": 110.0}     # decode t/s full-scale per lane
+PRE_FULL = {"0": 7000.0, "1": 6500.0, "2": 6500.0, "ds": 1800.0}  # prefill t/s full-scale per lane
+# "ds" = Project Maya DeepSeek on all three GPUs (:18080, no key). The rig runs FN (lanes 0/1/2) OR DS
+# (rig_mode.sh): in DS mode every device shows the DS equalizer; red only when neither mode answers.
 DEC_COL, PRE_COL = (0, 255, 80), (255, 140, 0)       # green decode / orange prefill
 OFF = (0, 0, 0)
 # I2C devices are throttled: (min seconds between writes, colour quantum).
@@ -122,9 +124,9 @@ class Live:
     comes from totals.prompt_tokens deltas (EMA-smoothed) and while `reading` before
     the first chunk lands the bar gets a floor value. Reads keys from launch
     presets; never prints them."""
-    LANES = {"0": (8001, "main.json"), "1": (8003, "lane2.json"), "2": (8004, "lane3.json")}
+    LANES = {"0": (8001, "main.json"), "1": (8003, "lane2.json"), "2": (8004, "lane3.json"), "ds": (18080, None)}
     POLL = 0.25
-    PRE_MIN = {"0": 1200.0, "1": 1000.0, "2": 1000.0}  # orange floor while reading, t/s
+    PRE_MIN = {"0": 1200.0, "1": 1000.0, "2": 1000.0, "ds": 400.0}  # orange floor while reading, t/s
 
     def __init__(self):
         import os, pynvml, threading, urllib.request
@@ -136,7 +138,7 @@ class Live:
         self.eng, self.cur = {}, {}
         for g, (port, preset) in self.LANES.items():
             try:
-                key = json.load(open(f"{d}/{preset}"))["api_key"]
+                key = json.load(open(f"{d}/{preset}"))["api_key"] if preset else None
                 self.eng[g] = {"url": f"http://127.0.0.1:{port}", "key": key,
                                "ptok": 0.0, "otok": 0.0, "req": 0.0, "gen": 0.0,
                                "ema": 0.0, "t": 0.0, "init": False, "fails": 0}
@@ -156,7 +158,7 @@ class Live:
                 continue
             try:
                 rq = self.url.Request(e["url"] + "/metrics",
-                                      headers={"Authorization": f"Bearer {e['key']}"})
+                                      headers={"Authorization": f"Bearer {e['key']}"} if e["key"] else {})
                 d = json.loads(self.url.urlopen(rq, timeout=1.0).read())
                 tot, live = d.get("totals", {}), d.get("live", {})
                 now = time.time()
@@ -179,8 +181,11 @@ class Live:
                 ph = (1 if st == "reading" else 0) | (2 if (st == "generating" or dotg > 0 or dot > 0) else 0)
                 ts = live.get("tok_s")
                 dec = ts if (ts and st == "generating") else (max(dotg, dot) / dt if (dotg or dot) else 0.0)
+                pr = live.get("prompt_read")   # Maya moves this while reading; Strata per 32K chunk
+                dpr = max(0.0, pr - e.get("pread", pr)) if isinstance(pr, (int, float)) else 0.0
+                e["pread"] = pr if isinstance(pr, (int, float)) else 0
                 if ph & 1:
-                    e["ema"] = 0.7 * e["ema"] + 0.3 * (dpt / dt)
+                    e["ema"] = 0.7 * e["ema"] + 0.3 * (max(dpt, dpr) / dt)
                     pre = max(e["ema"], self.PRE_MIN[g])
                 else:
                     e["ema"], pre = 0.0, 0.0
@@ -293,12 +298,15 @@ def main():
             flash = min(1.0, flash + newreq / 6.0)
             last_i = i
         flash *= math.exp(-dt * 3)
-        tps = {g: m("tps", g) for g in "012"}
-        pre = {g: m("pre", g) for g in "012"}
-        run = {g: m("run", g) for g in "012"}
+        L = ("0", "1", "2", "ds")
+        tps = {g: m("tps", g) for g in L}
+        pre = {g: m("pre", g) for g in L}
+        run = {g: m("run", g) for g in L}
         temp = {g: m("temp", g, 40) for g in "012"}
         util0 = m("util", "0")
-        up = {g: a["up"].get(g) for g in "012"}  # None = exporter gap
+        up = {g: a["up"].get(g) for g in L}  # None = not polled yet / exporter gap
+        ds_mode = up["ds"] == 1.0
+        all_down = up["ds"] == 0.0 and all(up[g] == 0.0 for g in "012")
         cpu, mem = m("cpu", "x", 40), m("mem", "x")
         total = sum(tps.values())
         hot = max(list(temp.values()) + [cpu])
@@ -319,10 +327,14 @@ def main():
                 return [tuple(max(x, y) for x, y in zip(gc, oc)) for gc, oc in zip(gcols, ocols)]
 
             def eq(n, g):
-                if up[g] == 0.0:
+                if ds_mode:          # DeepSeek spans every GPU: each device shows the DS bar
+                    g = "ds"
+                if all_down:         # neither FN nor DS answers: red pulse everywhere
                     return [scale((255, 0, 0), 0.15 + 0.5 * pulse)] * n
+                if up[g] == 0.0:     # one FN lane down while another FN lane runs: dim red
+                    return [scale((255, 0, 0), 0.08 + 0.25 * pulse)] * n
                 return bar_stack(n, tps[g] / DEC_FULL[g], DEC_COL, pre[g] / PRE_FULL[g], PRE_COL)
-            busy = any(run[g] > 0.05 for g in "012")
+            busy = any(run[g] > 0.05 for g in L)
             base = (0, 40, 50) if busy else OFF
             fl = tuple(int(base[j] + (255 - base[j]) * flash) for j in range(3))
             pump = fl
@@ -353,9 +365,11 @@ def main():
             out = ([c] * 30, [c] * 12, [c] * 12, c, c)
         else:  # MODE 5: dark unless something is wrong
             purple = scale((180, 0, 255), 0.2 + 0.8 * pulse)
-            gpu = [purple] * 30 if up["0"] == 0.0 else [OFF] * 30
-            ra = [purple] * 12 if up["2"] == 0.0 else [OFF] * 12
-            rb = [purple] * 12 if up["1"] == 0.0 else [OFF] * 12
+            # DS mode: the FN lanes are off on purpose; alert only when nothing answers
+            dn = (lambda g: all_down) if ds_mode else (lambda g: up[g] == 0.0)
+            gpu = [purple] * 30 if dn("0") else [OFF] * 30
+            ra = [purple] * 12 if dn("2") else [OFF] * 12
+            rb = [purple] * 12 if dn("1") else [OFF] * 12
             warm = scale((255, 70, 0), (hot - 80) / 5) if hot > 80 else OFF
             out = (gpu, ra, rb, OFF, warm)
 
@@ -364,10 +378,10 @@ def main():
             with open(STATUS, "w") as f:
                 f.write(f"mode={MODE} {'LIVE' if LIVE else 'replay'}="
                         f"{time.strftime('%m-%d %H:%M:%S', time.localtime(a['t'] if LIVE else FR[0]['t'] + rt))} "
-                        f"tps5090={tps['0']:.0f} tpsL2={tps['1']:.0f} tpsL3={tps['2']:.0f} "
-                        f"pre5090={pre['0']:.0f} preL2={pre['1']:.0f} preL3={pre['2']:.0f} "
-                        f"run={run['0']:.0f}/{run['1']:.0f}/{run['2']:.0f} hot={hot:.0f}C cpu={cpu:.0f}C "
-                        f"up={up['0']}/{up['1']}/{up['2']} flash={flash:.2f} "
+                        f"tps5090={tps['0']:.0f} tpsL2={tps['1']:.0f} tpsL3={tps['2']:.0f} tpsDS={tps['ds']:.0f} "
+                        f"pre5090={pre['0']:.0f} preL2={pre['1']:.0f} preL3={pre['2']:.0f} preDS={pre['ds']:.0f} "
+                        f"run={run['0']:.0f}/{run['1']:.0f}/{run['2']:.0f}/{run['ds']:.0f} hot={hot:.0f}C cpu={cpu:.0f}C "
+                        f"up={up['0']}/{up['1']}/{up['2']} upDS={up['ds']} mode={'DS' if ds_mode else 'FN'} flash={flash:.2f} "
                         f"alerts={a.get('alerts', {}).get('x', 0):.0f} "
                         f"writes gpu/ram/mb={rig.writes['gpu']}/{rig.writes['ram']}/{rig.writes['mb']}\n")
         tick += 1

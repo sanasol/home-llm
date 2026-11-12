@@ -74,6 +74,11 @@ except Exception:  # noqa: BLE001
     GENERATED = "litellm_session_id_generated"
 
 
+# Anthropic subscription lane: requests whose system prompt lacks the Claude Code
+# fingerprint get a generic 429 (no quota involved). Inject it as the leading system block.
+_CC_MAGIC = "You are Claude Code, Anthropic's official CLI for Claude."
+_CC_MODELS = ("claude-",)
+
 def _text(content):
     if isinstance(content, str):
         return content
@@ -221,6 +226,15 @@ class RigAffinity(CustomLogger):
             return healthy_deployments
 
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
+        try:  # claude-* = anthropic oauth lane: prepend the magic system block (idempotent)
+            if str(data.get("model") or "").startswith(_CC_MODELS):
+                msgs = data.get("messages")
+                if isinstance(msgs, list):
+                    head = next((m for m in msgs if isinstance(m, dict)), None)
+                    if not (_text(head.get("content")) if head else "").startswith(_CC_MAGIC):
+                        msgs.insert(0, {"role": "system", "content": _CC_MAGIC})
+        except Exception:  # noqa: BLE001 - best-effort
+            pass
         try:
             if data.get("model") not in POOL:
                 return data

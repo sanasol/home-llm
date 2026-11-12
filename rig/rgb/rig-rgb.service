@@ -1,5 +1,5 @@
 [Unit]
-Description=Rig RGB: LLM equalizer (5090=FN 5090 lane, RAM=FN 3090 lanes; green=decode, orange=prefill, AIO flashes on requests; off when idle), 4 Hz engine poll
+Description=Rig RGB: LLM equalizer (FN mode: 5090=FN 5090, RAM=FN 3090 lanes; DS mode: every device = DeepSeek; green=decode, orange=prefill, red=nothing serving; AIO flashes on requests), 4 Hz engine poll
 After=rig-rgb-server.service
 Requires=rig-rgb-server.service
 PartOf=rig-rgb-server.service

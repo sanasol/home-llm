@@ -39,16 +39,20 @@ CHART_JS = (HERE / "assets" / "chart.min.js").read_text()
 SPRITE = (REF / "sprite.svg").read_text().strip()
 SPRITE = re.sub(r"^<svg[^>]*>", '<svg style="display:none" aria-hidden="true">', SPRITE, count=1)
 
+# The ONE navigation of every page (Monitor / History / Hardware). Every page is written by this script in
+# the same run, so they cannot drift: add a tab here, run the script, deploy all pages together.
+TABS = [("monitor", "/", "activity", "Monitor"), ("hist", "/history", "clock", "History"), ("hw", "/hw", "cpu", "Hardware")]
+
+
 def header(active):
-    mon = ' aria-selected="true"' if active == "monitor" else ""
-    hw = ' aria-selected="true"' if active == "hw" else ""
-    hist = ' aria-selected="true"' if active == "hist" else ""
+    tabs = "\n".join(
+        f'    <a class="st-tab" role="tab" href="{href}" aria-label="{label}"'
+        f'{' aria-selected="true"' if key == active else ""}><svg class="st-icon st-icon--sm"><use href="#i-{ico}"/></svg>{label}</a>'
+        for key, href, ico, label in TABS)
     return f"""<header class="st-header">
   <span class="st-header__brand">Rig</span>
   <nav class="st-tabs" role="tablist" aria-label="Views">
-    <a class="st-tab" role="tab" href="/" aria-label="Monitor"{mon}><svg class="st-icon st-icon--sm"><use href="#i-activity"/></svg>Monitor</a>
-    <a class="st-tab" role="tab" href="/history" aria-label="History"{hist}><svg class="st-icon st-icon--sm"><use href="#i-clock"/></svg>History</a>
-    <a class="st-tab" role="tab" href="/hw" aria-label="Hardware"{hw}><svg class="st-icon st-icon--sm"><use href="#i-cpu"/></svg>Hardware</a>
+{tabs}
   </nav>
   <span class="st-header__spacer"></span>
   <span class="updated-at">updated <span id="updated">–</span></span>
@@ -272,8 +276,45 @@ function setPill(state, text) {
   $("pill-text").textContent = text;
 }
 
+// ---- rig mode switch (FN lanes <-> DS): POST /api/mode, progress from /api/state .mode
+let modeBusy = false;
+function renderMode(m) {
+  if (!m) return;
+  const run = m.target && !m.error;
+  const name = {fn: "FN · Flash-Next (3 lanes)", ds: "DS · DeepSeek (whole rig)", off: "nothing serving"};
+  $("mode-now").textContent = run ? `switching ${name[m.current] || m.current} → ${name[m.target]}` : `running: ${name[m.current] || m.current}`;
+  for (const b of document.querySelectorAll("[data-mode]")) {
+    b.setAttribute("aria-checked", String(b.dataset.mode === (run ? m.target : m.current)));
+    b.disabled = !!run || modeBusy;
+  }
+  $("mode-run").hidden = !run;
+  if (run) {
+    $("mode-phase").textContent = m.phase || "switching";
+    $("mode-pct").textContent = `${fmt(m.pct)}% · ${fmt(m.elapsed_s)} s`;
+    $("mode-bar").style.width = `${m.pct || 0}%`;
+  }
+  $("mode-err").hidden = !m.error;
+  if (m.error) $("mode-err").innerHTML = `<b>${esc(m.error)}</b>${(m.log || []).length ? `<pre>${esc(m.log.join("\n"))}</pre>` : ""}`;
+}
+document.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", async () => {
+  const to = b.dataset.mode, m = (lastState || {}).mode || {};
+  if ((m.target && !m.error) || to === m.current) return;
+  const what = to === "ds"
+    ? "Switch to DS: stop the three FN lanes (Qwen) and start DeepSeek on all GPUs?\nFN model names stop answering: Hermes/agents on Qwen fail until you switch back. Loading takes ~1 min."
+    : "Switch to FN: stop DeepSeek and start the three Strata lanes?\nDS stops answering (its conversations are saved to disk). Loading takes ~3 min.";
+  if (!confirm(what)) return;
+  modeBusy = true;
+  try {
+    const r = await fetch("api/mode", {method: "POST", headers: {"Content-Type": "application/json", "X-Rig-Mode": "1"}, body: JSON.stringify({mode: to})});
+    const j = await r.json();
+    if (!j.ok) alert(j.message);
+  } catch (e) { alert(`switch failed: ${e}`); }
+  modeBusy = false;
+}));
+
 function render(s) {
-  const EIDS = ["main", "l2", "l3"];
+  renderMode(s.mode);
+  const EIDS = ["main", "l2", "l3", "ds"];
   const names = s.eng_names || {};
   const engTag = Object.fromEntries(EIDS.map((e) => [e, (names[e] || {}).label || e]));
   window.ENGTAG = engTag;
@@ -304,7 +345,8 @@ function render(s) {
     }
     return `${engTag[e]} · ${fmt(l.tok_s, 1)} tok/s`;
   };
-  const bootTxt = EIDS.filter((e) => BOOT[e]).map((e) => `${engTag[e]} · ${BOOT[e].state === "starting" ? `starting ${Math.round(BOOT[e].pct)}%` : BOOT[e].phase}`);
+  // a lane stopped on purpose (the other rig mode) stays out of the pill; starting/failed lanes show
+  const bootTxt = EIDS.filter((e) => BOOT[e] && !(BOOT[e].state === "down" && /stopped/.test(BOOT[e].phase))).map((e) => `${engTag[e]} · ${BOOT[e].state === "starting" ? `starting ${Math.round(BOOT[e].pct)}%` : BOOT[e].phase}`);
   const pillText = [...act.map(laneText), ...bootTxt].join(" · ");
   if (queued > 0) setPill("queued", `${queued} queued${pillText ? ` · ${pillText}` : ""}`);
   else if (act.length) setPill(LV[act[0]].state, pillText);
@@ -324,6 +366,8 @@ function render(s) {
       bd.style.display = bd.classList.contains("opt") ? (bd.dataset.s === on ? "" : "none") : (boot ? "none" : "");
     }
     $(`${e}-card`).classList.toggle("booting", !!boot);
+    // the rig runs one mode at a time (FN lanes or DS): the idle mode's cards fade instead of shouting "Down"
+    $(`${e}-card`).classList.toggle("lane-off", !!boot && boot.state === "down");
     const note = $(`${e}-note`);
     note.textContent = (meta.pending || []).length ? `preset changed, applies on restart: ${meta.pending.join(", ")}` : "";
     const prog = $(`${e}-progress`);
@@ -531,7 +575,7 @@ function render(s) {
 
   // requests: all three engines, newest first, model chips color-coded, filterable
   const body = $("req-body");
-  const mCls = {main: "m-main", l2: "m-l2", l3: "m-l3"};
+  const mCls = {main: "m-main", l2: "m-l2", l3: "m-l3", ds: "m-ds"};
   let rows = reqs.map((r) => ({t: r.ts, eng: r.eng, badge: r.status,
     prompt: r.prompt, reused: r.reused, out: r.output, pre: r.prefill_tps, dec: r.decode_tps,
     hit: r.hit, dur: r.dur, approx: r.approx, n: r.n, client: r.client,
@@ -621,9 +665,9 @@ async function loadSummary() {
   }
   try {
     const s = await (await fetch(url)).json();
-    const names = window.ENGTAG || {main: "main", l2: "lane2", l3: "lane3"};
+    const names = window.ENGTAG || {main: "main", l2: "lane2", l3: "lane3", ds: "DS"};
     $("sum-span").textContent = fmtSpan(s.from, s.to);
-    $("sum-body").innerHTML = ["main", "l2", "l3"].map((e) => {
+    $("sum-body").innerHTML = ["main", "l2", "l3", "ds"].map((e) => {
       const x = s.engines[e] || {}, d = x.disk || {};
       const disk = d.saves || d.restores
         ? `<span title="restored from disk ${fmt(d.restores)}x, parked ${fmt(d.saves)}x, RAM-guard refusals ${fmt(d.fails)}x, ${fmt(d.restored_tokens)} tokens loaded back, ${gb(d.bytes)} written, avg restore ${fmt(d.avg_restore_ms, 0)} ms">↓${fmt(d.restores)} ↑${fmt(d.saves)}${d.fails ? ` <span class="st-badge st-badge--queued">${fmt(d.fails)}✗</span>` : ""}<br><span class="muted">${d.hit_pct != null ? `${d.hit_pct}% · ${fmt(d.avg_restore_ms, 0)} ms` : ""}</span></span>`
@@ -663,6 +707,22 @@ poll();
 
 MON_BODY = """
   <div class="monitor">
+    <div class="st-card mode-card" id="mode-card">
+      <div class="mode-head">
+        <span class="card-title">Rig mode</span>
+        <span class="muted small" id="mode-now">&ndash;</span>
+        <span class="st-header__spacer"></span>
+        <div class="st-tabs mode-seg" role="radiogroup" aria-label="Rig mode">
+          <button class="st-tab" role="radio" data-mode="fn" title="Three Strata lanes: Qwen3.8-Flash-Next, 4 streams">FN · Flash-Next</button>
+          <button class="st-tab" role="radio" data-mode="ds" title="Project Maya on all three GPUs: DeepSeek-V4.1-Flash, 2 streams">DS · DeepSeek</button>
+        </div>
+      </div>
+      <div class="mode-run" id="mode-run" hidden>
+        <div class="state-card__row"><span id="mode-phase">&ndash;</span><span class="muted" id="mode-pct"></span></div>
+        <div class="st-progress" id="mode-progress"><div class="st-progress__bar" id="mode-bar" style="width:0%"></div></div>
+      </div>
+      <div class="mode-err" id="mode-err" hidden></div>
+    </div>
     <div class="monitor-row eng-row">
 """ + "".join(f"""      <div class="st-card state-card eng-card m-{e}" id="{e}-card">
         <div class="state-card__head">
@@ -685,7 +745,7 @@ MON_BODY = """
           <div class="eng-tps__m"><span class="st-metric__value" id="{e}-pre">–</span><small>prefill t/s</small><small class="tps-last" id="{e}-pre-last"></small></div>
         </div>
       </div>
-""" for e in ("main", "l2", "l3")) + """    </div>
+""" for e in ("main", "l2", "l3", "ds")) + """    </div>
 
     <div class="rangebar">
       <span class="muted small">charts:</span>
@@ -706,6 +766,7 @@ MON_BODY = """
             <button class="st-btn st-btn--secondary c-main" data-reqf="main" data-lbl="main">main</button>
             <button class="st-btn st-btn--secondary c-l2" data-reqf="l2" data-lbl="l2">lane2</button>
             <button class="st-btn st-btn--secondary c-l3" data-reqf="l3" data-lbl="l3">lane3</button>
+            <button class="st-btn st-btn--secondary c-ds" data-reqf="ds" data-lbl="ds">DS</button>
           </span>
           <button class="st-btn st-btn--secondary" id="req-all" style="visibility:hidden">Show all</button></div>
         <div class="table-wrap" id="req-wrap">
@@ -1082,6 +1143,7 @@ def page(title, active, body, js, extra_css=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e8a33d'/%3E%3Ctext x='32' y='46' font-family='system-ui,sans-serif' font-size='40' font-weight='700' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
 <title>{title}</title>
 <style>
 {CSS}
@@ -1100,12 +1162,15 @@ a.st-tab{{text-decoration:none}}
 .req-src.m-main{{background:color-mix(in srgb,var(--st-accent) 20%,transparent)}}
 .req-src.m-l2{{background:color-mix(in srgb,var(--st-info) 22%,transparent)}}
 .req-src.m-l3{{background:color-mix(in srgb,var(--st-warn) 22%,transparent)}}
+.req-src.m-ds{{background:color-mix(in srgb,#3fae6b 22%,transparent)}}
 #req-body tr.m-main>td{{background:color-mix(in srgb,var(--st-accent) 6%,transparent)}}
 #req-body tr.m-l2>td{{background:color-mix(in srgb,var(--st-info) 7%,transparent)}}
 #req-body tr.m-l3>td{{background:color-mix(in srgb,var(--st-warn) 7%,transparent)}}
+#req-body tr.m-ds>td{{background:color-mix(in srgb,#3fae6b 7%,transparent)}}
 .eng-card.m-main{{border-top:3px solid var(--st-accent)}}
 .eng-card.m-l2{{border-top:3px solid var(--st-info)}}
 .eng-card.m-l3{{border-top:3px solid var(--st-warn)}}
+.eng-card.m-ds{{border-top:3px solid #3fae6b}}
 .eng-card .card-title .req-src{{font-size:11px;font-weight:600;color:var(--st-ink)}}
 .rangebar{{display:flex;gap:8px;align-items:center;margin:0 0 10px;flex-wrap:wrap}}
 .rangebar .st-btn.on{{border-color:var(--st-accent);color:var(--st-accent)}}
@@ -1113,6 +1178,7 @@ a.st-tab{{text-decoration:none}}
 .rangebar .st-btn.c-main.on{{border-color:var(--st-accent);color:var(--st-accent)}}
 .rangebar .st-btn.c-l2.on{{border-color:var(--st-info);color:var(--st-info)}}
 .rangebar .st-btn.c-l3.on{{border-color:var(--st-warn);color:var(--st-warn)}}
+.rangebar .st-btn.c-ds.on{{border-color:#3fae6b;color:#3fae6b}}
 .req-head--f{{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;column-gap:12px}}
 .req-head--f .card-title{{justify-self:start}}
 .req-head--f .req-filters{{justify-self:center;margin:0}}
@@ -1130,7 +1196,15 @@ a.st-tab{{text-decoration:none}}
 .speed-prefill .st-metric__value{{font-size:var(--st-fs-lg)}}
 .mchart{{width:100%;height:112px;margin-top:2px}}
 /* lane cards: equal thirds, the GPU/context line under the title, boot progress */
-.eng-row{{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.eng-row{{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.mode-card{{display:flex;flex-direction:column;gap:10px}}
+.mode-head{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
+.mode-seg .st-tab{{cursor:pointer}}
+.mode-seg .st-tab[aria-checked="true"]{{background:var(--st-surface);color:var(--st-ink);font-weight:700;box-shadow:var(--st-sh-card)}}
+.mode-seg .st-tab:disabled{{cursor:default;opacity:.7}}
+.mode-err{{color:#d64545;font-size:var(--st-fs-sm)}}
+.mode-err pre{{white-space:pre-wrap;margin:6px 0 0;color:var(--st-ink-muted);font-size:var(--st-fs-xs)}}
+.eng-row .eng-card.lane-off{{opacity:.45}}
 @media (max-width:1100px){{.eng-row{{grid-template-columns:minmax(0,1fr)}}}}
 .eng-card .state-card__head{{flex-wrap:wrap;row-gap:6px}}
 .eng-sub{{font-size:var(--st-fs-xs);margin:-2px 0 8px;line-height:1.35}}

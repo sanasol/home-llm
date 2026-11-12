@@ -52,7 +52,7 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
+    "w": 3,
     "x": 0,
     "y": 1
    },
@@ -112,8 +112,8 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
-    "x": 4,
+    "w": 3,
+    "x": 3,
     "y": 1
    },
    "targets": [
@@ -172,8 +172,8 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
-    "x": 8,
+    "w": 3,
+    "x": 6,
     "y": 1
    },
    "targets": [
@@ -224,6 +224,66 @@
   },
   {
    "id": 5,
+   "title": "Decode t/s \u00b7 DS",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 9,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_decode_tokens_per_second{gpu_index=\"all\"}",
+     "legendFormat": "{{lane}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live decode speed while generating (mean of non-zero 1 s samples, 15 s). 0 = idle."
+  },
+  {
+   "id": 6,
    "title": "Prefill t/s \u00b7 FN 5090",
    "type": "stat",
    "datasource": {
@@ -232,7 +292,7 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
+    "w": 3,
     "x": 12,
     "y": 1
    },
@@ -283,7 +343,7 @@
    "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
   },
   {
-   "id": 6,
+   "id": 7,
    "title": "Prefill t/s \u00b7 FN 3090 #1",
    "type": "stat",
    "datasource": {
@@ -292,8 +352,8 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
-    "x": 16,
+    "w": 3,
+    "x": 15,
     "y": 1
    },
    "targets": [
@@ -343,7 +403,7 @@
    "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
   },
   {
-   "id": 7,
+   "id": 8,
    "title": "Prefill t/s \u00b7 FN 3090 #2",
    "type": "stat",
    "datasource": {
@@ -352,8 +412,8 @@
    },
    "gridPos": {
     "h": 5,
-    "w": 4,
-    "x": 20,
+    "w": 3,
+    "x": 18,
     "y": 1
    },
    "targets": [
@@ -403,7 +463,67 @@
    "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
   },
   {
-   "id": 8,
+   "id": 9,
+   "title": "Prefill t/s \u00b7 DS",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "rigprom"
+   },
+   "gridPos": {
+    "h": 5,
+    "w": 3,
+    "x": 21,
+    "y": 1
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rig_llm_prefill_tokens_per_second{gpu_index=\"all\"}",
+     "legendFormat": "{{lane}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "value_and_name",
+    "justifyMode": "auto",
+    "orientation": "auto"
+   },
+   "description": "Live prefill (uncached prompt tokens) speed. 0 = no prefill in the last 15 s."
+  },
+  {
+   "id": 10,
    "title": "Decode t/s by lane (live)",
    "type": "timeseries",
    "datasource": {
@@ -459,7 +579,7 @@
    "description": "Instantaneous decode speed while generating. Gaps to 0 = idle."
   },
   {
-   "id": 9,
+   "id": 11,
    "title": "Prefill t/s by lane (live)",
    "type": "timeseries",
    "datasource": {
@@ -515,7 +635,7 @@
    "description": "Uncached prompt processing speed per lane."
   },
   {
-   "id": 10,
+   "id": 12,
    "title": "Effective decode t/s per request (5m)",
    "type": "timeseries",
    "datasource": {
@@ -571,7 +691,7 @@
    "description": "generated tokens / decode seconds over 5 min = average per-stream speed."
   },
   {
-   "id": 11,
+   "id": 13,
    "title": "Generated tokens/s throughput (all streams, 1m)",
    "type": "timeseries",
    "datasource": {
@@ -636,7 +756,7 @@
    "description": "Aggregate output tokens per second across all parallel streams."
   },
   {
-   "id": 12,
+   "id": 14,
    "title": "Decode t/s per watt (GPU efficiency)",
    "type": "timeseries",
    "datasource": {
@@ -653,6 +773,15 @@
     {
      "refId": "A",
      "expr": "(rig_llm_decode_tokens_per_second > 0) / on(uuid) group_left() nvidia_smi_power_draw_watts",
+     "legendFormat": "{{lane}}",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "rigprom"
+     }
+    },
+    {
+     "refId": "B",
+     "expr": "(rig_llm_decode_tokens_per_second{lane=\"DS\"} > 0) / scalar(sum(nvidia_smi_power_draw_watts))",
      "legendFormat": "{{lane}}",
      "datasource": {
       "type": "prometheus",
@@ -690,13 +819,13 @@
      "showLegend": true
     }
    },
-   "description": "Live decode t/s divided by that card's power draw."
+   "description": "Live decode t/s divided by that card's power draw (DS: by all GPUs together)."
   },
   {
    "type": "row",
    "title": "LLM engines \u2014 load, KV, cache",
    "collapsed": false,
-   "id": 13,
+   "id": 15,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -706,7 +835,7 @@
    "panels": []
   },
   {
-   "id": 14,
+   "id": 16,
    "title": "Requests running / waiting",
    "type": "timeseries",
    "datasource": {
@@ -771,7 +900,7 @@
    }
   },
   {
-   "id": 15,
+   "id": 17,
    "title": "KV cache / context fill",
    "type": "timeseries",
    "datasource": {
@@ -825,10 +954,10 @@
      "showLegend": true
     }
    },
-   "description": "Largest slot context / max context (FN 5090: 256K, FN 3090 lanes: 128K)."
+   "description": "Largest slot context / max context (FN 5090: 512K, FN 3090 lanes: 256K, DS: 512K)."
   },
   {
-   "id": 16,
+   "id": 18,
    "title": "Prefix cache hit ratio (30m)",
    "type": "timeseries",
    "datasource": {
@@ -885,7 +1014,7 @@
    "description": "Share of prompt tokens served from cache (token-weighted). Gaps = no requests in the window."
   },
   {
-   "id": 17,
+   "id": 19,
    "title": "TTFT-side: prefill seconds per request (15m)",
    "type": "timeseries",
    "datasource": {
@@ -940,7 +1069,7 @@
    }
   },
   {
-   "id": 18,
+   "id": 20,
    "title": "Prompt tokens/s (incl. cached) vs computed",
    "type": "timeseries",
    "datasource": {
@@ -1004,7 +1133,7 @@
    }
   },
   {
-   "id": 19,
+   "id": 21,
    "title": "Requests/min completed",
    "type": "timeseries",
    "datasource": {
@@ -1059,7 +1188,7 @@
    }
   },
   {
-   "id": 20,
+   "id": 22,
    "title": "MTP drafts accepted / offered (15m)",
    "type": "timeseries",
    "datasource": {
@@ -1113,10 +1242,10 @@
      "showLegend": true
     }
    },
-   "description": "Strata MTP speculative decoding acceptance per lane."
+   "description": "Speculative decoding acceptance per lane: Strata MTP on FN, DSpark + prompt lookup on DS."
   },
   {
-   "id": 21,
+   "id": 23,
    "title": "Host RAM available (shared expert arena lives in RAM)",
    "type": "timeseries",
    "datasource": {
@@ -1181,7 +1310,7 @@
    "description": "Three Strata lanes share one 50 GB expert arena (/mnt/strata-arena); the engines keep >= 2.5 GiB free for parking conversations."
   },
   {
-   "id": 22,
+   "id": 24,
    "title": "Engine up",
    "type": "timeseries",
    "datasource": {
@@ -1235,13 +1364,14 @@
      "placement": "bottom",
      "showLegend": true
     }
-   }
+   },
+   "description": "1 = answering. The rig runs FN (three lanes) OR DS (rig_mode.sh): the other mode reads 0 on purpose."
   },
   {
    "type": "row",
    "title": "GPUs",
    "collapsed": false,
-   "id": 23,
+   "id": 25,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -1251,7 +1381,7 @@
    "panels": []
   },
   {
-   "id": 24,
+   "id": 26,
    "title": "GPU util %",
    "type": "timeseries",
    "datasource": {
@@ -1307,7 +1437,7 @@
    }
   },
   {
-   "id": 25,
+   "id": 27,
    "title": "GPU power W",
    "type": "timeseries",
    "datasource": {
@@ -1362,7 +1492,7 @@
    }
   },
   {
-   "id": 26,
+   "id": 28,
    "title": "GPU core temp C",
    "type": "timeseries",
    "datasource": {
@@ -1416,7 +1546,7 @@
    }
   },
   {
-   "id": 27,
+   "id": 29,
    "title": "GPU VRAM / hotspot C (gputemps)",
    "type": "timeseries",
    "datasource": {
@@ -1470,7 +1600,7 @@
    }
   },
   {
-   "id": 28,
+   "id": 30,
    "title": "VRAM used",
    "type": "timeseries",
    "datasource": {
@@ -1525,7 +1655,7 @@
    }
   },
   {
-   "id": 29,
+   "id": 31,
    "title": "SM clock MHz",
    "type": "timeseries",
    "datasource": {
@@ -1583,7 +1713,7 @@
    "type": "row",
    "title": "Power & electricity \u2014 measured from Matter wall plugs",
    "collapsed": false,
-   "id": 30,
+   "id": 32,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -1593,7 +1723,7 @@
    "panels": []
   },
   {
-   "id": 31,
+   "id": 33,
    "title": "System power now (W, wall plugs)",
    "type": "stat",
    "datasource": {
@@ -1661,7 +1791,7 @@
    "description": "Wall power is metered by GRILLPLATS Matter plugs: \"Rig\" (node 23) and \"Minisforum\" (node 25), ElectricalPowerMeasurement cluster, meter class \u00b11%. Rules: rig/config/prometheus-rules/power.yml, group rig_power_plug. Money is reported in EUR with a fixed 117.581053 RSD/EUR (open.er-api.com, 2026-11-06). The old estimate (GPU NVML + CPU RAPL + ~55 W rest, /0.89 PSU) left the dashboard on 06.11 \u2014 it under-read by ~2x; its rules stay as rig:power_system_wall_est_watts for pre-06.11 history."
   },
   {
-   "id": 32,
+   "id": 34,
    "title": "Cost now (EUR/h)",
    "type": "stat",
    "datasource": {
@@ -1730,7 +1860,7 @@
    "description": "EPS commercial two-rate tariff incl. network, surcharges, excise 7.5%, VAT 20%: VT 0.2254 / NT 0.1607 EUR/kWh (18.9 / 26.5 RSD, NT 00-08 Belgrade). Fixed monthly fees excluded. docs/20 (sep-2026 invoice)."
   },
   {
-   "id": 33,
+   "id": 35,
    "title": "All wall plugs (W)",
    "type": "stat",
    "datasource": {
@@ -1790,7 +1920,7 @@
    "description": "Sum over every device that meters energy (Rig, Minisforum, \"\u0423\u0433\u043e\u043b\u044c\")."
   },
   {
-   "id": 34,
+   "id": 36,
    "title": "Wall plugs reporting",
    "type": "stat",
    "datasource": {
@@ -1859,7 +1989,7 @@
    "description": "Metering plugs currently online; a plug that drops out stops its series instead of repeating a stale value (mqtt2prometheus cache.timeout 0)."
   },
   {
-   "id": 35,
+   "id": 37,
    "title": "Today (since 00:00)",
    "type": "stat",
    "datasource": {
@@ -1929,7 +2059,7 @@
    "hideTimeOverride": false
   },
   {
-   "id": 36,
+   "id": 38,
    "title": "This month",
    "type": "stat",
    "datasource": {
@@ -1999,7 +2129,7 @@
    "hideTimeOverride": false
   },
   {
-   "id": 37,
+   "id": 39,
    "title": "Dashboard range",
    "type": "stat",
    "datasource": {
@@ -2068,7 +2198,7 @@
    "description": "Energy and cost over the time range picked at the top right."
   },
   {
-   "id": 38,
+   "id": 40,
    "title": "Month projection (7d avg x 730 h)",
    "type": "stat",
    "datasource": {
@@ -2136,7 +2266,7 @@
    }
   },
   {
-   "id": 39,
+   "id": 41,
    "title": "Wall plug power vs GPU/CPU draw",
    "type": "timeseries",
    "datasource": {
@@ -2228,7 +2358,7 @@
    "description": "What the socket draws versus the sum of GPU (NVML) and CPU (RAPL). The gap is monitor, peripherals, disks and PSU losses."
   },
   {
-   "id": 40,
+   "id": 42,
    "title": "Cost, EUR/h",
    "type": "timeseries",
    "datasource": {
@@ -2285,7 +2415,7 @@
    "description": "Measured wall power x current tariff (NT 00-08 is ~1/3 cheaper)."
   },
   {
-   "id": 41,
+   "id": 43,
    "title": "Energy, kWh (integral of measured plug power)",
    "type": "timeseries",
    "datasource": {
@@ -2350,7 +2480,7 @@
    "description": "The rules publish kW/h (15 s interval); sum of steps x 15/3600 = kWh over the selected window. Not a counter, so increase() does not apply."
   },
   {
-   "id": 42,
+   "id": 44,
    "title": "Wall plugs: W / V / A",
    "type": "timeseries",
    "datasource": {
@@ -2427,7 +2557,7 @@
    "type": "row",
    "title": "Fans",
    "collapsed": false,
-   "id": 43,
+   "id": 45,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -2437,7 +2567,7 @@
    "panels": []
   },
   {
-   "id": 44,
+   "id": 46,
    "title": "GPU fan %",
    "type": "timeseries",
    "datasource": {
@@ -2494,7 +2624,7 @@
    "description": "NVML fan duty per card (3090s: Vix override curve; 5090: VBIOS)."
   },
   {
-   "id": 45,
+   "id": 47,
    "title": "Board fans RPM",
    "type": "timeseries",
    "datasource": {
@@ -2550,7 +2680,7 @@
    "description": "nct6799 headers with a tach: radiator (CPU_FAN1), rear (CPU_FAN2), front 3x140 (CHA_FAN), pump. Bottom 2x P12 Pro on CHA_FAN4 are invisible to Linux (BIOS curve, no tach)."
   },
   {
-   "id": 46,
+   "id": 48,
    "title": "Board fan PWM %",
    "type": "timeseries",
    "datasource": {
@@ -2659,7 +2789,7 @@
    "type": "row",
    "title": "Host",
    "collapsed": false,
-   "id": 47,
+   "id": 49,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -2669,7 +2799,7 @@
    "panels": []
   },
   {
-   "id": 48,
+   "id": 50,
    "title": "CPU busy %",
    "type": "timeseries",
    "datasource": {
@@ -2725,7 +2855,7 @@
    }
   },
   {
-   "id": 49,
+   "id": 51,
    "title": "CPU temp C",
    "type": "timeseries",
    "datasource": {
@@ -2779,7 +2909,7 @@
    }
   },
   {
-   "id": 50,
+   "id": 52,
    "title": "RAM available",
    "type": "timeseries",
    "datasource": {
@@ -2843,7 +2973,7 @@
    }
   },
   {
-   "id": 51,
+   "id": 53,
    "title": "Load / disk free",
    "type": "timeseries",
    "datasource": {
@@ -2927,7 +3057,7 @@
    "type": "row",
    "title": "LiteLLM gateway (summary \u2014 full view: dashboard 'LiteLLM gateway')",
    "collapsed": false,
-   "id": 52,
+   "id": 54,
    "gridPos": {
     "h": 1,
     "w": 24,
@@ -2937,7 +3067,7 @@
    "panels": []
   },
   {
-   "id": 53,
+   "id": 55,
    "title": "LiteLLM req/s by model",
    "type": "timeseries",
    "datasource": {
@@ -2992,7 +3122,7 @@
    }
   },
   {
-   "id": 54,
+   "id": 56,
    "title": "LiteLLM failed req/s",
    "type": "timeseries",
    "datasource": {
@@ -3047,7 +3177,7 @@
    }
   },
   {
-   "id": 55,
+   "id": 57,
    "title": "LiteLLM in-flight",
    "type": "timeseries",
    "datasource": {
