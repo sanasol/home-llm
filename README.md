@@ -9,9 +9,9 @@ both run locally. Every number below was measured here and can be re-run from th
 
 ![The rig in the room](assets/rig-irl.jpg)
 
-*The box in the room. The 5090 lives inside the case; the two 3090s hang off it — one on a
-PCIe x8 riser, one on a thin OCuLink x4 cable. The Minisforum DEG1 dock and its own PSU
-are the leftover of the Steam Deck phase, now just part of the furniture.*
+*The box in the room: the 5090 and one 3090 live inside the case; the other 3090 sits
+outside on a thin OCuLink x4 cable, through the Minisforum DEG1 dock and its own 850 W PSU
+(the black boxes on top).*
 
 ## Two builds, one switch
 
@@ -42,9 +42,11 @@ Ryzen 9 9950X (16C/32T, AVX-512 VNNI) · 96 GB DDR5-6000 (2 channels) · RTX 509
 (PCIe 5.0 x8) · RTX 3090 24 GB (PCIe 4.0 x4, OCuLink) · RTX 3090 24 GB (PCIe 4.0 x8) ·
 Samsung 990 PRO 2 TB · Ubuntu 26.10 · NVIDIA driver 615.71 · CUDA 13.1.
 
-The measured link speeds matter: **5090 28.9 GB/s, 3090 x8 13.4 GB/s, 3090 x4 6.7 GB/s**.
-That x4 card is the reason the DS layer split gives fewer layers to the slow link, and the
-reason the CPU expert pool has to be planned rig-wide rather than per-engine.
+One 3090 runs inside the case on a PCIe x8 riser; the other runs outside on the DEG1 dock,
+over OCuLink x4, powered by its own 850 W PSU. The measured link speeds are the whole story:
+**5090 28.9 GB/s, inside 3090 x8 13.4 GB/s, outside 3090 x4 6.7 GB/s**. That x4 card is why
+the DS layer split gives fewer layers to the slow link, and why the CPU expert pool has to
+be planned rig-wide rather than per-engine.
 
 ## Numbers that actually mattered
 
