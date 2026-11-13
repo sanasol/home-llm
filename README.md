@@ -22,14 +22,17 @@ Qwen3.8-Flash-Next IQ3_S ([SC117 abliterated GGUF](https://huggingface.co/SC117/
 the 5090 runs two slots at 512K, the two 3090s one slot each at 256K. All three engines read
 one **50 GB expert arena** from RAM; [LiteLLM](https://github.com/BerriAI/litellm) in front
 keeps conversations sticky per lane. 4 streams total, **371–392 t/s aggregate** when everything
-is busy. The 5090 alone does 160–205 t/s solo; the 3090 lanes do 110–127 t/s.
+is busy. The 5090 alone does 160–205 t/s solo (184 t/s at two streams) and **6.4–7.3k t/s prefill**;
+the 3090 lanes do 110–127 t/s decode and ~**2.8k t/s prefill** at 30K+.
 
 **[DS](https://github.com/mw00/project-maya) — one model, the whole box.**
 DeepSeek-V4.1-Flash Maya-XS on [Project Maya](https://github.com/mw00/project-maya): all three
 GPUs work on one model, 512K context, DSpark speculative decoding, `--parallel 2`.
-Decode went **48 -> 68 t/s** after DSpark calibration; cold prefill is 2.7–3.3k t/s, and
-483K tokens read in about 7.5 minutes. Conversations park in RAM/disk (`ds-slots`) and come
-back in 0.3–0.4 s. The FN model names fall back to DS while the rig is in DS mode.
+Decode went **48 -> 68 t/s** after DSpark calibration; live it sits at **60–88 t/s** (68.5 at
+the snapshot below), **81.5 t/s aggregate** across the two slots. Cold prefill is **2.7–3.3k t/s**
+(24–400K); 483K tokens read in 7.5 minutes (**~1.1k t/s**). Conversations park in RAM/disk
+(`ds-slots`) and come back in 0.3–0.4 s. The FN model names fall back to DS while the rig is
+in DS mode.
 
 Switching is one command on the rig: `rig_mode.sh fn|ds`. Currently the box is in **DS**
 mode — the monitor screenshot below shows FN lanes down and Maya serving.
@@ -48,18 +51,26 @@ over OCuLink x4, powered by its own 850 W PSU. The measured link speeds are the 
 the DS layer split gives fewer layers to the slow link, and why the CPU expert pool has to
 be planned rig-wide rather than per-engine.
 
-## Numbers that actually mattered
+## The numbers I run on
 
-![Numbers that mattered](assets/charts.svg)
+**Snapshot 13.11 12:27–12:29 CET:** DS was reading a prompt at **283 t/s**, decoding at **68.5 t/s**,
+prefix reuse **98.8%**, 662 requests since start. FN lanes are down in DS mode — the FN numbers
+below are from the last FN runs, not a stale all-time soup.
 
-- **371–392 t/s aggregate** on four streams — a whole rig answering at once, not one card
-  pretending to be a server.
-- **442K-token thread back in 4.8 s** (74 s cold) thanks to RAM+disk conversation parking.
-  A 102K thread: 15 s cold, **0.9 s** back. The boring part that changes everything.
-- **Russian glitches 18.3% -> 1.7%** with sampling (T 0.7 + min_p 0.05), not a new model.
-  The scanner and A/B harness are in [`rig/scripts`](rig/scripts/).
-- **DS decode 48 -> 68 t/s** after DSpark; cold prefill **1.9–2.1×** with three opt-in flow
-  flags. The full 483K-token read: 7.5 min, needle intact.
+![What the builds do, today](assets/charts.svg)
+
+- **FN, when active:** decode **184 t/s** on the 5090 at two streams (160–205 solo), 110–127 t/s
+  on the 3090 lanes; prefill **6.4–7.3k t/s** on the 5090, ~**2.8k t/s** on the 3090s at 30K+.
+  Aggregate for all four streams: **371–392 t/s**.
+- **DS, right now:** decode **60–88 t/s** (68.5 at the snapshot), **81.5 t/s aggregate** across
+  two slots; prefix reuse **98.8%**. Cold prefill **2.7–3.3k t/s** (24–400K), **~1.1k t/s** at
+  483K (7.5 min read).
+- **Pick the build for the job:** FN wins raw speed and four parallel streams; DS wins one 512K
+  model and long agent tasks. The live numbers change every second — this is a dated snapshot,
+  not a benchmark table pretending to be constant.
+- **Older receipts, clearly dated:** Mac 33.4 t/s (10.10), 442K thread back in **4.8 s** (74 s
+  cold, 2.11), RU glitches **18.3% -> 1.7%** (6.11). They are milestones in the timeline below,
+  not the rig's current numbers.
 
 ## The room when it works
 
@@ -97,6 +108,8 @@ another box, outside the rig, so the rig cannot grade its own homework.
 - **Oct 30–Nov 2 · Flash-Next on all three cards.** One 50 GB arena, three engines,
   conversation parking (PRs [#3565](https://github.com/Niko1221/Strata/pull/3565) and
   [#3341](https://github.com/Niko1221/Strata/pull/3341) rebased and running here).
+- **Nov 2–6 · parking + Russian sampling.** 442K tokens restored in **4.8 s** (74 s cold);
+  RU glitches **18.3% -> 1.7%** with T 0.7 + min_p 0.05, not a new model.
 - **Nov 6 · the save bug.** Strata's DFlash2-auto silently broke session saves; the guard
   written here became upstream [PR #1492](https://github.com/Niko1221/Strata/pull/1492).
 - **Nov 10–12 · what streaming cards hate.** Two rounds of [DFlash2](https://huggingface.co/incoai/Qwen3.8-Flash-Next-DFlash2) on 3090s: RU 119 -> 107 t/s,
