@@ -14,20 +14,21 @@ outside on a thin OCuLink x4 cable, through the Minisforum DEG1 dock and its own
 (the black boxes on top).*
 
 > **How to read the numbers.** `NOW` = the production config serving today.
-> `LAST RUN` = the last measurement of a build that is installed but not currently serving.
-> `RETIRED` = an earlier phase or config, kept for the story, **not current**. Every number
-> carries one of these tags; they are not mixed into one table.
+> `LAST` = a build that is installed but not currently serving; the date next to each number
+> is the date of that measurement. `RETIRED` = an earlier phase or config, kept for the story,
+> **not current**. Every number carries one of these tags; they are not mixed into one table.
 
 ## Two builds, two states
 
 ![FN and DS builds](assets/builds.svg)
 
-**FN — `LAST RUN` (30.10), not current.** Qwen3.8-Flash-Next IQ3_S ([SC117 abliterated GGUF](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF))
+**FN — `LAST` (active until 12.11; last full bench 30.10), not current.** Qwen3.8-Flash-Next IQ3_S ([SC117 abliterated GGUF](https://huggingface.co/SC117/Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF))
 on [Strata](https://github.com/Niko1221/Strata). Three lanes: the 5090 at 512K with two slots,
 the two 3090s at 256K with one slot each, one shared **50 GB expert arena** in RAM.
 [LiteLLM](https://github.com/BerriAI/litellm) sits in front; four streams total. The build
-is installed, but the lanes are **stopped while DS mode is on** — the numbers in the FN
-section below are from the last FN run, not today's rig.
+is installed, but the lanes are **stopped while DS mode is on** — FN served the box until
+DS came up on 12.11 evening; the numbers below are from the last full FN bench (30.10),
+not today's rig.
 
 **DS — `NOW` (13.11, final prod).** DeepSeek-V4.1-Flash Maya-XS on
 [Project Maya](https://github.com/mw00/project-maya). All three GPUs work on one model:
@@ -36,7 +37,7 @@ This is what serves the box today; the live numbers are below.
 
 ## Right now: DS production (13.11)
 
-`NOW` — rig mode **DS**. Config on the box: Maya v1.1.61 + PR [#959](https://github.com/mw00/project-maya/pull/959),
+`NOW` — rig mode **DS** (switched 12.11 evening). Config on the box: Maya v1.1.61 + PR [#959](https://github.com/mw00/project-maya/pull/959),
 `DS4_SPLIT=16,8,16`, `DS4_FLOW_COPY_DMA`, `DS4_AI_RUN`, `DS4_YOCO_FLOW`, `MAYA_DS4_PREFILL_CPU`,
 `--max-context 524288 --dspark on --parallel 2`. Experts: 9.2k in VRAM, 6.6k (47 GB) in RAM,
 Engram Q6_K on NVMe.
@@ -64,10 +65,11 @@ The A/B's "400K" arm is actually a **462.5K-token** prompt; I use the real token
 Agent turns after a warm start: `+0.6K` **1.3 s**, `+1.2K` **2.0 s**, `+3K` **3.6 s**. FN lanes
 are down in DS mode — there are no current FN numbers to mix into this table.
 
-## FN: last run, not current
+## FN: active until 12.11, last full bench 30.10
 
-`LAST RUN` — last FN measurement, **30.10**, when FN mode was active. The build is installed
-(Strata 0.1.58.2, shared arena, parking), but stopped now.
+`LAST` — FN is installed (Strata 0.1.58.2, shared arena, parking), but it served the box only
+until **12.11 evening**, when DS came up. The table below is the **last full FN bench (30.10)**,
+not the last day of FN production.
 
 | Lane | Decode | Prefill | Context |
 |---|---|---|---|
@@ -76,7 +78,7 @@ are down in DS mode — there are no current FN numbers to mix into this table.
 | FN 3090 #2 · x4 | **113–127 t/s** solo; 90–125 with all three | **~2.8k t/s** | 256K, 1 slot |
 | Four streams together | **371–392 t/s** aggregate | — | 4 sessions |
 
-These are **last-run numbers**, not a claim about the current rig. Switching back to FN is
+These are **30.10 bench numbers**, not a claim about the current rig. Switching back to FN is
 `rig_mode.sh fn` on the rig; the mode is owner-side, not a background toggle.
 
 ## Retired numbers — do not read these as current
