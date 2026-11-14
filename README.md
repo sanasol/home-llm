@@ -18,6 +18,21 @@ outside on a thin OCuLink x4 cable, through the Minisforum DEG1 dock and its own
 > is the date of that measurement. `RETIRED` = an earlier phase or config, kept for the story,
 > **not current**. Every number carries one of these tags; they are not mixed into one table.
 
+## Models on Hugging Face
+
+My published conversions are on [sanasol2008](https://huggingface.co/sanasol2008). These are distinct from the SC117 GGUF used by the rig's FN build. Bit rates below describe routed-expert payloads, not whole-pack size or runtime memory. Follow each model card for sources, download verification and limitations.
+
+| Model | Format / bits | Weight source | Runtime | Verified scope |
+|---|---|---|---|---|
+| [Qwen Flash-Next 2bpw](https://huggingface.co/sanasol2008/Qwen3.8-Flash-Next-Abliterated-Sushi-2bpw) | Sushi EXL3 MCG-w15; 2 bpw experts | [OrcaRouter BF16 derivative](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored), not SC117 | Stock Sushi >=1.2.0, Apple Silicon | Text, vision and tools tested; see card for measured limits |
+| [Qwen Flash-Next 3bpw](https://huggingface.co/sanasol2008/Qwen3.8-Flash-Next-Abliterated-Sushi-3bpw) | Sushi EXL3 MCG-w15; 3 bpw experts | Same OrcaRouter BF16 derivative | Stock Sushi >=1.2.0, Apple Silicon | Text, vision and tools tested; see card for measured limits |
+| [DeepSeek Flash Heretic 1.75bpw](https://huggingface.co/sanasol2008/DeepSeek-V4.1-Flash-1017-Heretic-Sushi-STQ-1.75bpw) | Standalone Sushi STQ; official 1.75 bpw experts retained | Official beamster pack + 38 `wo_b` banks from [pqhaz Heretic native weights](https://huggingface.co/pqhaz/DeepSeek-V4.1-Flash-1017-heretic) | Sushi 1.6.0, Apple Silicon | Limited runtime smoke; not a full Heretic requantization |
+| [DeepSeek Flash Orca 1.75bpw](https://huggingface.co/sanasol2008/DeepSeek-V4.1-Flash-1017-Orca-Sushi-STQ-1.75bpw) | Sushi PAIR1, 1.75 bpw experts; SPEC1-w15 trunk | Actual [OrcaRouter Mix-256G GGUF](https://huggingface.co/orcarouter/DeepSeek-V4.1-Flash-1017-abliterated-GGUF), including edited experts | Sushi 1.6.0, Apple Silicon; public repack | Original CPU candidate: limited runtime smoke; full quality unverified |
+
+### Draft-vocabulary utility
+
+[Qwen3.8-27B Cyrillic MTP draft vocabulary](https://huggingface.co/sanasol2008/qwen3.8-27b-draft-vocab-cyrillic) contains **59,539 token IDs**, not model weights or a standalone LLM. It extends the shipped HyperQwen draft vocabulary for Cyrillic; use it with a compatible Qwen3.8-27B checkpoint and HyperQwen/vLLM. The card records the measured Russian decode improvement and reproducible construction.
+
 ## Two builds, two states
 
 ![FN and DS builds](assets/builds.svg)
