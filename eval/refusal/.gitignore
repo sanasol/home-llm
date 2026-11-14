@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+results/
+data/
+*.jsonl
+*.selection.json
+__pycache__/
