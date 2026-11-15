@@ -45,40 +45,57 @@ is installed, but the lanes are **stopped while DS mode is on** — FN served th
 DS came up on 12.11 evening; the numbers below are from the last full FN bench (30.10),
 not today's rig.
 
-**DS — `NOW` (13.11, final prod).** DeepSeek-V4.1-Flash Maya-XS on
-[Project Maya](https://github.com/mw00/project-maya). All three GPUs work on one model:
-512K context, DSpark, `--parallel 2`, final split `16,8,16`, four prefill flags.
-This is what serves the box today; the live numbers are below.
+**DS — `NOW` (verified 15.11).** DeepSeek-V4.1-Flash **Kiwi Maya-XS abliterated pack** on
+[Project Maya](https://github.com/mw00/project-maya). All three GPUs serve one model:
+512K context, DSpark, two slots, split `16,8,16`. FN remains stopped.
 
-## Right now: DS production (13.11)
+## Right now: Kiwi DS (15.11)
 
-`NOW` — rig mode **DS** (switched 12.11 evening). Config on the box: Maya v1.1.61 + PR [#959](https://github.com/mw00/project-maya/pull/959),
-`DS4_SPLIT=16,8,16`, `DS4_FLOW_COPY_DMA`, `DS4_AI_RUN`, `DS4_YOCO_FLOW`, `MAYA_DS4_PREFILL_CPU`,
-`--max-context 524288 --dspark on --parallel 2`. Experts: 9.2k in VRAM, 6.6k (47 GB) in RAM,
-Engram Q6_K on NVMe.
+Maya v1.1.61 with PR [#959](https://github.com/mw00/project-maya/pull/959) deltas and
+PR [#911](https://github.com/mw00/project-maya/pull/911), local engine commit `56154a5`.
+The CPU IQ1_S AVX-512/VNNI path is enabled with `DS4_IQ1S512=1`; CPU row time and each
+GPU's streamed-expert time are calibrated at load. This is an **experimental local build**,
+not an upstream release or a proven universal speedup. A bounded earlier A/B was mixed:
+single-request decode improved, while the concurrent wall-time result regressed with
+different generated lengths. No general quality improvement is claimed.
 
-**Live snapshot 13.11 12:46 CET (11:46Z).** Instant: **decode 90.9 t/s**, **prefill 398 t/s**,
-prefix reuse **98.6%**. Over the last 30 minutes: **decode 63.4 t/s avg**, **prefill 2,367 t/s avg**,
-prefix reuse **97.6%**, 106 requests, average prompt 326K tokens. Final-config A/B decode:
-**66.8 t/s**; `--parallel 2` aggregate: **81.5 t/s**. These move every second — the snapshot is dated.
+Live configuration: `DS4_SPLIT=16,8,16`, `DS4_FLOW_COPY_DMA=1`, `DS4_AI_RUN=1`,
+`DS4_YOCO_FLOW=1`, `MAYA_DS4_PREFILL_CPU=1`,
+`--max-context 524288 --dspark on --parallel 2`. Kiwi has its own RAM/disk slot cache;
+the original pack and slots are retained for rollback. Runtime refusal-direction ablation
+is **off by default**; that switch is separate from the abliterated weight pack.
 
-**Cold prefill, final production config** (`r-s1688`: split 16,8,16 + the four flags; medians of two rounds):
+### Overnight production, not a benchmark
+
+**15 November, 00:00-08:30 CET**: ordinary agent traffic, sampled from the same
+Prometheus metrics used by Grafana. No synthetic load was added.
+
+| Metric | Observed value | Meaning |
+|---|---|---|
+| Live decode gauge | **69.0 t/s** median; 147.5 sampled peak | 81 non-zero 1-minute samples; smoothed aggregate across active requests |
+| Live prefill gauge | **3,764 t/s** median | 19 non-zero samples; production traffic, not cold prompts |
+| Completed output tokens | **258,665** | Counter increase over the full window, not live throughput |
+| Engine answered exporter | **511 / 511** samples | One-minute checks; shorter outages are not excluded |
+
+![Kiwi overnight production telemetry](assets/kiwi-overnight.svg)
+
+The rig was mostly idle. Decode is a **15-second non-zero mean** of Maya's 5-second
+active-request rates, not an average over the full 8.5 hours or a per-request benchmark.
+[Raw sanitized samples, queries and caveats](bench/results/2026-11-15-kiwi-overnight/).
+
+### Historical cold-prefill baseline: original XS v2, 13.11
+
+These controlled measurements are **not a benchmark of the current Kiwi pack/engine**.
+They used split `16,8,16` plus the four prefill flags (medians of two rounds):
 
 | Prompt | Tokens read | Cold prefill | Read time |
 |---|---|---|---|
 | 24K | 28,560 | **2,929 t/s** | 9.7 s |
 | 128K | 148,868 | **3,721 t/s** | 40.0 s |
 | 462K | 462,576 | **3,248 t/s** | 142 s |
-| 483K | extrapolated | — | **≈149 s** |
 
-The A/B's "400K" arm is actually a **462.5K-token** prompt; I use the real token count above.
-483K is not a separate cold run — it is extrapolated from the 462K point (483,000 / 3,248 ≈ 149 s).
-**The old "483K = 1,074 t/s / 7.5 min" number is `RETIRED`** (pre-flag 18,9,13 config); it is not current.
-
-![DS production, now](assets/charts.svg)
-
-Agent turns after a warm start: `+0.6K` **1.3 s**, `+1.2K` **2.0 s**, `+3K` **3.6 s**. FN lanes
-are down in DS mode — there are no current FN numbers to mix into this table.
+The A/B's "400K" arm was actually 462.5K tokens. The old pre-flag 483K / 7.5-minute
+result is retired. No new cold-prefill sweep was run for this documentation update.
 
 ## FN: active until 12.11, last full bench 30.10
 
@@ -103,7 +120,7 @@ describes the production box today.
 
 | What | When | Old number | Why it is not current |
 |---|---|---|---|
-| DS 483K prefill, pre-flag 18,9,13 | 12.11 20:00 | **1,074 t/s / 7.5 min** | Replaced by prefill flags + final split 16,8,16; current 462K point is 3,248 t/s / 142 s |
+| DS 483K prefill, pre-flag 18,9,13 | 12.11 20:00 | **1,074 t/s / 7.5 min** | Replaced by prefill flags + final split 16,8,16; 13.11 XS v2 baseline: 462K at 3,248 t/s / 142 s |
 | DS base prefill (no flags) | 12.11 22:10 | 1,429 t/s @24K; 1,552 t/s @128K | Prefill flags lifted cold read **1.9–2.1×**; base is retired |
 | DS split 18,9,13 (`r-prod`) | 12.11 22:48 | 2,719 / 3,302 / 2,875 t/s @24/128/400K | Split changed to **16,8,16**: 2,929 / 3,721 / 3,248 t/s |
 | DS on 2 cards vs 3 cards | 12.11 21:00 | 1,640–1,680 vs 1,450–1,490 t/s @24K; decode 48 vs 65 | Three cards kept; the comparison is retired |
@@ -119,13 +136,22 @@ describes the production box today.
 ![The rig schematic](assets/rig.svg)
 
 Ryzen 9 9950X (16C/32T, AVX-512 VNNI) · 96 GB DDR5-6000 (2 channels) · RTX 5090 32 GB
-(PCIe 5.0 x8) · RTX 3090 24 GB (PCIe 4.0 x4, OCuLink) · RTX 3090 24 GB (PCIe 4.0 x8) ·
+(PCIe 5.0 x8) · RTX 3090 24 GB (**PCIe 3.0 x4**, OCuLink) · RTX 3090 24 GB (PCIe 4.0 x8) ·
 Samsung 990 PRO 2 TB · Ubuntu 26.10 · NVIDIA driver 615.71 · CUDA 13.1.
 
 One 3090 runs inside the case on a PCIe x8 riser; the other runs outside on the DEG1 dock,
-over OCuLink x4, powered by its own 850 W PSU. Measured links: **5090 28.9 GB/s, inside
-3090 x8 13.4 GB/s, outside 3090 x4 6.7 GB/s**. The x4 card is why the DS layer split gives
-fewer layers to the slow link, and why the CPU expert pool has to be planned rig-wide.
+over OCuLink x4, powered by its own 850 W PSU. The external link has been forced to
+**Gen3 in BIOS since 13.11** after repeated **Xid 79 / GPU fallen off the bus** events
+at Gen4. A dock power-cycle was needed during recovery; rebooting only the host did not
+clear the stuck dock.
+
+Measured Gen3 transfer: **3.38 GB/s** over a 90-second / 304 GB H2D+D2H test. The earlier
+**6.7 GB/s** result belongs to Gen4 and is **historical**, not the current link. Other
+historical link measurements: 5090 **28.9 GB/s**, internal 3090 x8 **13.4 GB/s**.
+Receiver-error counts dropped sharply after the Gen3 change; the recorded DS cold-prefill
+checks remained around **2.8-3.6k t/s**. This points to the external PCIe signal path,
+but does not prove which adapter, cable or dock component is faulty. Gen3 is a mitigation,
+not a claim that the physical problem is fixed.
 
 ## The room when it works
 
@@ -133,8 +159,8 @@ fewer layers to the slow link, and why the CPU expert pool has to be planned rig
 |---|---|
 | ![Monitor](assets/monitor-main.png) | ![Grafana](assets/grafana-rig-overview.png) |
 
-The monitor screenshot is a dated capture (**13.11 05:52 CET, DS idle**); the current numbers
-are the **12:46 snapshot** above. The monitor at `:8090` shows lanes, mode, live t/s, GPU load,
+These monitor/Grafana screenshots are historical captures from **13.11**, not the current Kiwi build.
+The current production chart and its exact overnight window are shown above. The monitor at `:8090` shows lanes, mode, live t/s, GPU load,
 VRAM, temps and request history. [Grafana](https://grafana.com) keeps the long view and
 [Prometheus](https://prometheus.io) throws the alerts into Telegram. A watchdog lives on
 another box, outside the rig.
@@ -175,8 +201,10 @@ above; do not read these as the rig today.
   or collapses to ~10 t/s.
 - **Nov 12 · DeepSeek on the whole box.** Maya-XS v2, PR [#959](https://github.com/mw00/project-maya/pull/959)
   prefill-on-CPU, DSpark, and a layer split tuned to link speed.
-- **Nov 13 · final DS prod tuning.** Split **16,8,16** from 00:15, four prefill flags, cold
+- **Nov 13 · original XS v2 tuning.** Split **16,8,16** from 00:15, four prefill flags, cold
   462K read **142 s**; old 7.5-min number retired.
+- **Nov 13 · external PCIe recovery.** Repeated Gen4 Xid 79 events; dock power-cycle, then BIOS Gen3 x4. Transfer measured at **3.38 GB/s**.
+- **Nov 14-15 · Kiwi + experimental CPU path.** Switched pack, retained 512K/two slots, enabled the PR #911/#959 trial. Overnight production telemetry is published above, separate from older controlled benchmarks.
 
 ## What the benchmarks got wrong
 

@@ -2,7 +2,7 @@
 
 Dated build log of the home LLM rig. Every entry points at the harness/config and the raw
 numbers in this repo; no private hosts, keys or personal data. Hardware line: Ryzen 9 9950X,
-96 GB DDR5-6000, RTX 5090 (PCIe 5.0 x8) + 2x RTX 3090 (PCIe 4.0 x4 OCuLink / x8), Ubuntu 26.10,
+96 GB DDR5-6000, RTX 5090 (PCIe 5.0 x8) + 2x RTX 3090 (external PCIe 3.0 x4 OCuLink / internal PCIe 4.0 x8; external Gen3 since 13.11), Ubuntu 26.10,
 driver 615.71, CUDA 13.1.
 
 ### 10-11.10.2026 — Mac M3 Max 48 GB, phase 0
@@ -67,3 +67,8 @@ driver 615.71, CUDA 13.1.
 ### 12.11.2026 — upstream work
 - Reported a 5090 + 2x 3090 Maya box (PR #959 prefill-on-CPU), three Strata comments
   (disk conversation cache, DFlash2 + Cyrillic on NVIDIA streaming cards, select-F16 topology).
+
+### 13-15.11.2026 - Gen3 mitigation, Kiwi and overnight production
+- Repeated Xid 79 events on the external Gen4 OCuLink path required a dock power-cycle. BIOS Gen3 x4 reduced receiver errors; 90 s / 304 GB transfer test measured 3.38 GB/s. The exact faulty component is not isolated.
+- Current pack: Kiwi Maya-XS abliterated. Local Maya v1.1.61 + PR #959 deltas + PR #911, engine `56154a5`, CPU IQ1_S VNNI enabled. 512K, DSpark, parallel 2 and split 16,8,16 retained; runtime refusal-direction ablation off by default. Experimental, not a proven general speed/quality win.
+- [15 November overnight samples](../bench/results/2026-11-15-kiwi-overnight/): 00:00-08:30 CET, 69.0 t/s median non-zero sampled live decode gauge, 258,665 completed output tokens. Ordinary mostly-idle traffic, not a controlled benchmark. Older XS v2 cold-prefill measurements remain historical.
