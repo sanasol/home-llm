@@ -29,6 +29,8 @@ My published conversions are on [sanasol2008](https://huggingface.co/sanasol2008
 | [DeepSeek Flash Heretic 1.75bpw](https://huggingface.co/sanasol2008/DeepSeek-V4.1-Flash-1017-Heretic-Sushi-STQ-1.75bpw) | Standalone Sushi STQ; official 1.75 bpw experts retained | Official beamster pack + 38 `wo_b` banks from [pqhaz Heretic native weights](https://huggingface.co/pqhaz/DeepSeek-V4.1-Flash-1017-heretic) | Sushi 1.6.0, Apple Silicon | Limited runtime smoke; not a full Heretic requantization |
 | [DeepSeek Flash Orca 1.75bpw](https://huggingface.co/sanasol2008/DeepSeek-V4.1-Flash-1017-Orca-Sushi-STQ-1.75bpw) | Sushi PAIR1, 1.75 bpw experts; SPEC1-w15 trunk | Actual [OrcaRouter Mix-256G GGUF](https://huggingface.co/orcarouter/DeepSeek-V4.1-Flash-1017-abliterated-GGUF), including edited experts | Sushi 1.6.0, Apple Silicon; public repack | Original CPU candidate: limited runtime smoke; full quality unverified |
 
+Build instructions and source scripts: **[Sushi conversion recipes](recipes/README.md)** (Heretic attention-bank replacement and full Orca GGUF conversion). These convert existing abliterations; they do not perform the original refusal-removal edit.
+
 ### Draft-vocabulary utility
 
 [Qwen3.8-27B Cyrillic MTP draft vocabulary](https://huggingface.co/sanasol2008/qwen3.8-27b-draft-vocab-cyrillic) contains **59,539 token IDs**, not model weights or a standalone LLM. It extends the shipped HyperQwen draft vocabulary for Cyrillic; use it with a compatible Qwen3.8-27B checkpoint and HyperQwen/vLLM. The card records the measured Russian decode improvement and reproducible construction.

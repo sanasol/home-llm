@@ -1,0 +1,146 @@
+{
+  "assemble_orca_experts.py": {
+    "role": "public-stage-adapter",
+    "sha256": "8e9344ba3fe1d125ccf13b05a53b68af88612c4311ad08987ade4a567229a960"
+  },
+  "check_full_candidate.py": {
+    "role": "public-stage-adapter",
+    "sha256": "d151fc5e63d0980e203393dc7fc76ecdabb5ff4a8181b04366474892d2cee803"
+  },
+  "engram_cuda.py": {
+    "role": "public-stage-adapter",
+    "sha256": "7a6c44f4251abb860c7d43c9e68ad6f20a078b8c0381bef87f8d9347a04f4ba4"
+  },
+  "engram_export.py": {
+    "role": "public-stage-adapter",
+    "sha256": "74f48247134921b7a6a52799b8821e36f95c7f7056eaa8bb7237ff662e79c24d"
+  },
+  "fetch_trunk_calibration.py": {
+    "role": "public-stage-adapter",
+    "sha256": "04b6355fd4d444b9205e635236fda0a6bd142a36714fb2dd0aa1b67eb253ab08"
+  },
+  "fix_vision_precision.py": {
+    "role": "public-stage-adapter",
+    "sha256": "da7e6442a1fe0c12510126da0ccdc8d89d23718d3e102c334dbb4ea6f2409f49"
+  },
+  "hub.py": {
+    "role": "public-stage-adapter",
+    "sha256": "5f17dc0136bc8c3188c10f3f8eba9f0a4f289b1b81afb442d5746e941c9b9adc"
+  },
+  "imatrix_reader.py": {
+    "role": "public-stage-adapter",
+    "sha256": "2c3ef20d9853ddfee7d641e7db21153212ade18563b7130fbe14428845e030c8"
+  },
+  "materialize_orca_candidate.py": {
+    "role": "public-stage-adapter",
+    "sha256": "f179a176984c67fa94769295566de11c1a7f0a769bae83e68b0ed0baf436fb70"
+  },
+  "orca_256g_tensors.json": {
+    "role": "pinned-source-catalog",
+    "sha256": "05efec55b849f3a893b69ef76e406a6c44dc5ccdbc7c971e0ddf55c614d86dcb"
+  },
+  "orca_export.py": {
+    "role": "public-stage-adapter",
+    "sha256": "f9484c189b9991c642880277f4645484367d461c1276bf74e225be613991d060"
+  },
+  "orca_reader.py": {
+    "role": "public-stage-adapter",
+    "sha256": "b04270e80bb92eb5cd59a735675af16c5bc790eaae2228ca088404a2115a7b5c"
+  },
+  "pair1_contract.py": {
+    "role": "public-stage-adapter",
+    "sha256": "e66dced8e4c6f2130ef36d015320da2f2517ba7e72b2f6c8d501a9493b540d50"
+  },
+  "pair1_cuda.cu": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "f03eb74b49cd859391183a8495e87571b779fd153949c57df8f36cdcb76f66b3"
+  },
+  "pair1_cuda.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "12d6e6f241f5e61a1c67f11c549d43b2c822cd11fd83cad58b91e849aee14a55"
+  },
+  "pair1_reference.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "2dcf848972e6f7ab8a20e62321bb044256465d352a434b68f0f1705409141f48"
+  },
+  "run_orca_conversion.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "af8e8177699c041683af69e881e0b00b3720888bf9582d3c92bae81a49fe6b56"
+  },
+  "run_trunk_conversion.py": {
+    "role": "public-stage-adapter",
+    "sha256": "1730138e34b2a6147c36104beb0c620f5ae1591c94a7f981b76229793ac65f32"
+  },
+  "spec1_quality.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "6515896ac6fd97a497f7857c343721670536d9e84e01ced61e276e3f1e9b9a61"
+  },
+  "spec1_w15.txt": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "37f724318112c5fe1a586c3de2cc7f59fc3a9d7fc00ec0f703baecb7cb9b54cf"
+  },
+  "stq.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "dd75fb5f715677cab07cf65e17bb10c6feab0e2d7cd0461d1b82236204b6c463"
+  },
+  "stq_quality.py": {
+    "role": "released-frozen-numerical-source",
+    "sha256": "2407b1b6173650462db60c901cf526a5577012aa020576f0cc4a5da658b92a66"
+  },
+  "test_assemble_orca_experts.py": {
+    "role": "offline-test",
+    "sha256": "7ecd207299a9d0e9acb7139205a2aaba16c09c384f164ee3a0a40a52d33c6d63"
+  },
+  "test_engram_cuda.py": {
+    "role": "offline-test",
+    "sha256": "e318b4d5c010a1918f7ca4cddf624afed4f3e2b86f0551d141d19ccb65af20b2"
+  },
+  "test_engram_export.py": {
+    "role": "offline-test",
+    "sha256": "f49150e98f9e5833a47f39f5ac47889ed8648448831006ea3e1d7d8af79001bf"
+  },
+  "test_fix_vision_precision.py": {
+    "role": "offline-test",
+    "sha256": "4c3708f516f941d72876970890cbebdb7db86f4c880537b2dec780f139bdb0fc"
+  },
+  "test_imatrix_reader.py": {
+    "role": "offline-test",
+    "sha256": "8c973139abb803519bae3d4932a86edbea0777c77ca20c6dbf4e322a0c197bbd"
+  },
+  "test_materialize_orca_candidate.py": {
+    "role": "offline-test",
+    "sha256": "415b1366244ea4692fc1c17f7712c06e980d751c3e42df566c7b0616ce191938"
+  },
+  "test_orca_export.py": {
+    "role": "offline-test",
+    "sha256": "c11d040e0347e6d9e60b4d9e1b78d4b57663e738d0260629832a75384aff723a"
+  },
+  "test_pair1_contract.py": {
+    "role": "offline-test",
+    "sha256": "e9c46eb58d772a4070d19e00a0bb980d603e3c95c17ee69fae17fd478c955bbb"
+  },
+  "test_pair1_cuda.py": {
+    "role": "offline-test",
+    "sha256": "e4d650025175ca3f276588cae1a7778b105c0e4715cffee20d47caf49fbf31fc"
+  },
+  "test_pair1_reference.py": {
+    "role": "offline-test",
+    "sha256": "07faf943524393437efe83b19688c333602a6ddcf39fda92542fd41f4d47e9c3"
+  },
+  "test_run_orca_conversion.py": {
+    "role": "offline-test",
+    "sha256": "f16c132c7999ed740fe2d9cce112f35f0c1bd69723a9ac11ec2fb72f20537d48"
+  },
+  "test_run_trunk_conversion.py": {
+    "role": "offline-test",
+    "sha256": "f6d2ef5d6b08f310957aa95cec89561f0e434dc9981a790b9a39bf2a35f77d80"
+  },
+  "test_spec1_quality.py": {
+    "role": "offline-test",
+    "sha256": "f28b9bfbb92b7465f66ace9a382a5db1c0bd2b37fd69e159e41c9d1e6ccd9628"
+  },
+  "test_stq_quality.py": {
+    "role": "offline-test",
+    "sha256": "d1c3622e8af190e4f142a1c38abcdfbea782a45dc3bb9b36e78ff9a510d7cb42"
+  }
+}
